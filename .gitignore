@@ -1,0 +1,57 @@
+# Previously tracked via git-filelist.txt (allowlist mode):
+#   *.py
+#   *.pyw
+#   *.txt
+#   *.md
+#   *.bat
+#   *.sh
+#   *.xlsx
+#   *.html
+#   *.css
+#   *.js
+#   *.json
+#   *.xml
+#   *.yaml
+#   *.yml
+# Now using .gitignore (deny-list): everything is committed
+# except the patterns below. Add more patterns as needed.
+
+# .gitignore — created by git-auto-gui
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.lnk
+
+# Logs & temp
+*.log
+*.tmp
+*.bak
+
+# git-auto-gui project settings
+.git-auto-gui.json
+qigor_wallpaper_manager_150k.jpg
+qigor_wallpaper_manager_thumb.jpg
