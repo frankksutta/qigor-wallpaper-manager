@@ -1,0 +1,2 @@
+2026-03-21 11:45:00  Script started. USER=my4nt SESSION=?
+2026-03-21 11:45:01  Toast shown OK.
