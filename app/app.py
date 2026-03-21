@@ -734,13 +734,47 @@ class App:
         if not src:
             self._log("⚠  No image selected. Drop or paste an image first.", "yellow")
             return
+
+        # ── If it's a URL, silently download+store first ──────────────────────
         if src.lower().startswith(("http://", "https://")):
-            self._log("⚠  URLs must be downloaded first — click Set Wallpaper, then Set Lock Screen.", "yellow")
-            return
+            self._log("Downloading image for lock screen…", "cyan")
+            try:
+                local_path = wp.download_image(src, self._log)
+                # copy to store
+                dest = STORE_DIR / local_path.name
+                if not dest.exists():
+                    import shutil as _sh
+                    _sh.copy2(str(local_path), str(dest))
+                    self._log(f"Saved to store: {dest.name}", "magenta")
+                    local_path = dest
+                src = str(local_path)
+                self._pending_path.set(src)
+                self._drop_label.config(text=f"📎  {local_path.name}")
+            except Exception as e:
+                self._log(f"✖  Download failed: {e}", "red")
+                return
+
         path = Path(src)
         if not path.exists():
             self._log(f"⚠  File not found: {path}", "yellow")
             return
+
+        # ── If file is not in store, copy it there silently ───────────────────
+        # PersonalizationCSP requires a stable path that won't move/delete
+        already_stored = path.resolve().parent.resolve() == STORE_DIR.resolve()
+        if not already_stored:
+            try:
+                import shutil as _sh
+                dest = STORE_DIR / path.name
+                if dest.exists() and dest.resolve() != path.resolve():
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    dest = STORE_DIR / f"{path.stem}_{ts}{path.suffix}"
+                _sh.copy2(str(path), str(dest))
+                self._log(f"Copied to store for lock screen: {dest.name}", "magenta")
+                path = dest
+            except Exception as e:
+                self._log(f"⚠  Could not copy to store: {e} — using original path.", "yellow")
+
         spotlight_on, _ = wp.check_spotlight_status()
         msg = (
             "Changing the lock screen requires a one-time Windows\n"
@@ -826,17 +860,25 @@ class App:
 
     def _refresh_spotlight_ui(self):
         try:
-            is_on, _ = wp.check_spotlight_status()
-            csp      = wp.csp_is_set()
+            is_on, detail = wp.check_spotlight_status()
+            csp    = wp.csp_is_set()
             green  = CONSOLE_COLORS[self.theme_name]["green"]
             yellow = CONSOLE_COLORS[self.theme_name]["yellow"]
             dim    = CONSOLE_COLORS[self.theme_name]["dim"]
+
+            # Spotlight line — show detail so user can see why it's on/off
             if is_on:
                 self._spotlight_var.set("⚠  Lock screen Spotlight: ON")
                 self._spotlight_lbl.config(fg=yellow)
             else:
-                self._spotlight_var.set("✔  Lock screen Spotlight: OFF")
+                # If CSP is set by this app, Spotlight is effectively suppressed
+                if csp:
+                    self._spotlight_var.set("✔  Lock screen: custom image active")
+                else:
+                    self._spotlight_var.set("✔  Lock screen Spotlight: OFF")
                 self._spotlight_lbl.config(fg=green)
+
+            # CSP status line
             if csp:
                 self._spotlight_status_lbl.config(
                     text="Custom image active (managed policy)", fg=dim)
@@ -898,51 +940,27 @@ class App:
                 continue
 
     def _show_current_lock_screen(self):
-        chosen = None
-        source = ""
-        try:
-            import winreg
-            key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP",
-                0, winreg.KEY_READ)
-            path, _ = winreg.QueryValueEx(key, "LockScreenImagePath")
-            winreg.CloseKey(key)
-            if path and Path(path).exists():
-                chosen = Path(path)
-                source = "custom image (PersonalizationCSP)"
-        except Exception:
-            pass
-        spotlight_on, _ = wp.check_spotlight_status()
-        if not chosen or spotlight_on:
-            cache_dir = (Path.home() / "AppData/Local/Packages"
-                         "/Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy"
-                         "/LocalState/Assets")
-            if cache_dir.exists():
-                big_files = [f for f in cache_dir.iterdir()
-                             if f.is_file() and not f.suffix
-                             and f.stat().st_size > 100_000]
-                if big_files:
-                    sf = max(big_files, key=lambda f: f.stat().st_mtime)
-                    if spotlight_on:
-                        chosen = sf; source = "Spotlight (overriding custom image)"
-                    elif not chosen:
-                        chosen = sf; source = "Spotlight cache (no custom image set yet)"
-        if not chosen:
+        path_str, source = wp.find_current_lock_screen_image()
+        if not path_str:
             self._log("⚠  No lock screen image found.", "yellow")
+            self._log("   Windows may be using a solid colour, or access is restricted.", "dim")
             return
-        self._log(f"Current lock screen: {chosen.name}", "cyan")
+        self._log(f"Current lock screen: {Path(path_str).name}", "cyan")
         self._log(f"  Source: {source}", "dim")
+        spotlight_on, _ = wp.check_spotlight_status()
+        if spotlight_on:
+            self._log("  ⚠  Spotlight is ON — this image may rotate daily.", "yellow")
         if not PIL_AVAILABLE:
             return
         try:
-            img = Image.open(str(chosen)).convert("RGB")
+            img = Image.open(path_str).convert("RGB")
             self._preview_raw = img
             self.root.after(0, self._reflow_preview)
             self._preview_info_var.set(
                 f"Lock screen  •  {img.width}×{img.height}  •  {source}")
         except Exception as e:
-            self._log(f"⚠  Could not open: {e}", "yellow")
+            self._log(f"⚠  Could not open image for preview: {e}", "yellow")
+            self._log(f"   Path: {path_str}", "dim")
 
     # ── Windows Sources menu ──────────────────────────────────────────────────
 

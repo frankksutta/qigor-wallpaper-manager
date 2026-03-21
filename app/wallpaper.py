@@ -245,6 +245,65 @@ def launch_helper_elevated(helper: Path, log_fn) -> bool:
     return True
 
 
+def find_current_lock_screen_image() -> tuple[str | None, str]:
+    """
+    Find the currently active lock screen image from all possible sources.
+    Returns (path_str_or_None, source_description).
+    Checks in priority order:
+    1. PersonalizationCSP (set by this app via UAC helper)
+    2. Windows Themes cached file (Win10/11 Picture mode)
+    3. Spotlight asset cache (most recent large file)
+    """
+    # 1. PersonalizationCSP — set by this app
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP",
+            0, winreg.KEY_READ)
+        path, _ = winreg.QueryValueEx(key, "LockScreenImagePath")
+        winreg.CloseKey(key)
+        if path and Path(path).exists():
+            return path, "custom image set by this app (PersonalizationCSP)"
+    except Exception:
+        pass
+
+    # 2. Windows Themes cached wallpaper paths (Picture mode)
+    cached_paths = [
+        Path.home() / "AppData/Local/Microsoft/Windows/SystemData",
+        Path.home() / "AppData/Roaming/Microsoft/Windows/Themes/CachedFiles",
+    ]
+    # SystemData has per-user lock screen in subdirs
+    system_data = Path.home() / "AppData/Local/Microsoft/Windows/SystemData"
+    if system_data.exists():
+        try:
+            candidates = []
+            for f in system_data.rglob("*"):
+                if f.is_file() and f.stat().st_size > 50_000:
+                    candidates.append(f)
+            if candidates:
+                newest = max(candidates, key=lambda f: f.stat().st_mtime)
+                return str(newest), "Windows lock screen image (SystemData)"
+        except Exception:
+            pass
+
+    # 3. Spotlight asset cache
+    spotlight_dir = (Path.home() /
+        "AppData/Local/Packages"
+        "/Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy"
+        "/LocalState/Assets")
+    if spotlight_dir.exists():
+        try:
+            big = [f for f in spotlight_dir.iterdir()
+                   if f.is_file() and not f.suffix and f.stat().st_size > 100_000]
+            if big:
+                newest = max(big, key=lambda f: f.stat().st_mtime)
+                return str(newest), "Windows Spotlight (daily rotating image)"
+        except Exception:
+            pass
+
+    return None, "no lock screen image found"
+
+
 def copy_spotlight_images(log_fn):
     """Copy all Spotlight assets to STORE_DIR, renaming to .jpg."""
     from .constants import WIN_IMAGE_SOURCES
