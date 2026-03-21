@@ -68,7 +68,7 @@ class App:
         self._refresh_history_list()
         self._refresh_favorites_list()
         self._show_last_changed()
-        self.root.after(0, self._refresh_spotlight_ui)
+        self.root.after(0, self._update_ls_btn)
 
         if "--remind" in sys.argv:
             self.root.after(800, self._show_reminder_notification)
@@ -783,17 +783,13 @@ class App:
             "  1. A small helper program launches (you'll see the UAC prompt)\n"
             "  2. It changes the lock screen and exits immediately\n"
             "  3. This app stays open the whole time\n"
+            f"\nImage: {path.name}"
         )
-        if spotlight_on:
-            msg += ("\n⚠  Windows Spotlight is currently ON.\n"
-                    "   It will be automatically turned OFF.\n")
-        msg += f"\nImage: {path.name}"
         if not messagebox.askokcancel("Set Lock Screen — Permission Required",
                                       msg, parent=self.root):
             return
         if spotlight_on:
             wp.disable_spotlight(self._log)
-            self._refresh_spotlight_ui()
         self._log("─" * 52, "dim")
         self._log("Launching lock screen helper (UAC prompt will appear)…", "cyan")
         threading.Thread(target=self._do_set_lock_screen,
@@ -824,7 +820,7 @@ class App:
             except Exception:
                 self._log_threadsafe("─" * 52, "dim")
                 self._log_threadsafe("✔  Helper ran — press Win+L to verify.", "green")
-            self.root.after(0, self._refresh_spotlight_ui)
+            self.root.after(0, self._update_ls_btn)
         except Exception as e:
             self._log_threadsafe(f"✖  Error: {e}", "red")
 
@@ -858,33 +854,10 @@ class App:
         except Exception as e:
             self._log_threadsafe(f"✖  Error: {e}", "red")
 
-    def _refresh_spotlight_ui(self):
+    def _update_ls_btn(self):
+        """Update the Personalize/Release button based on whether CSP is set."""
         try:
-            is_on, detail = wp.check_spotlight_status()
-            csp    = wp.csp_is_set()
-            green  = CONSOLE_COLORS[self.theme_name]["green"]
-            yellow = CONSOLE_COLORS[self.theme_name]["yellow"]
-            dim    = CONSOLE_COLORS[self.theme_name]["dim"]
-
-            # Spotlight line — show detail so user can see why it's on/off
-            if is_on:
-                self._spotlight_var.set("⚠  Lock screen Spotlight: ON")
-                self._spotlight_lbl.config(fg=yellow)
-            else:
-                # If CSP is set by this app, Spotlight is effectively suppressed
-                if csp:
-                    self._spotlight_var.set("✔  Lock screen: custom image active")
-                else:
-                    self._spotlight_var.set("✔  Lock screen Spotlight: OFF")
-                self._spotlight_lbl.config(fg=green)
-
-            # CSP status line
-            if csp:
-                self._spotlight_status_lbl.config(
-                    text="Custom image active (managed policy)", fg=dim)
-            else:
-                self._spotlight_status_lbl.config(
-                    text="No policy — Windows has full control", fg=dim)
+            csp = wp.csp_is_set()
             if csp:
                 c = BTN_COLORS["danger"]
                 self._ls_pers_btn.config(
@@ -900,8 +873,7 @@ class App:
                     text="⚙  Personalize Lock Screen",
                     bg=c["bg"], fg=c["fg"], activebackground=c["active"])
                 Tooltip(self._ls_pers_btn,
-                        "Open Settings → Personalization → Lock screen.\n"
-                        "No managed policy is active.")
+                        "Open Settings → Personalization → Lock screen.")
         except Exception:
             pass
 
@@ -925,7 +897,7 @@ class App:
             time.sleep(2)
             self._log_threadsafe("✔  Policy removed — opening Settings.", "green")
             self.root.after(0, self._open_lock_screen_settings)
-            self.root.after(0, self._refresh_spotlight_ui)
+            self.root.after(0, self._update_ls_btn)
         except Exception as e:
             self._log_threadsafe(f"✖  Error: {e}", "red")
 
@@ -934,7 +906,7 @@ class App:
             try:
                 os.startfile(uri)
                 self._log("Opened Settings → Personalization → Lock screen.", "dim")
-                self.root.after(4000, self._refresh_spotlight_ui)
+                self.root.after(4000, self._update_ls_btn)
                 return
             except Exception:
                 continue
@@ -947,9 +919,7 @@ class App:
             return
         self._log(f"Current lock screen: {Path(path_str).name}", "cyan")
         self._log(f"  Source: {source}", "dim")
-        spotlight_on, _ = wp.check_spotlight_status()
-        if spotlight_on:
-            self._log("  ⚠  Spotlight is ON — this image may rotate daily.", "yellow")
+
         if not PIL_AVAILABLE:
             return
         try:

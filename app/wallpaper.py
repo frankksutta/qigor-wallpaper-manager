@@ -82,7 +82,20 @@ def get_current_wallpaper_path() -> str | None:
 # ── Lock screen ───────────────────────────────────────────────────────────────
 
 def check_spotlight_status() -> tuple[bool, str]:
-    """Returns (is_on, detail_str)."""
+    """
+    Returns (is_on, detail_str).
+    Checks three registry locations — any one being Spotlight = return True.
+
+    1. HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager
+         RotatingLockScreenEnabled  DWORD  1=on
+    2. HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Lock Screen\\Creative
+         (key existing at all = Spotlight Creative is active on some builds)
+    3. HKCU\\Software\\Policies\\Microsoft\\Windows\\Personalization
+         LockScreenType  DWORD  2=Spotlight
+    """
+    reasons = []
+
+    # Check 1: ContentDeliveryManager rotating lock screen flag
     try:
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -90,14 +103,47 @@ def check_spotlight_status() -> tuple[bool, str]:
             0, winreg.KEY_READ)
         try:
             rotating, _ = winreg.QueryValueEx(key, "RotatingLockScreenEnabled")
+            if rotating != 0:
+                reasons.append(f"RotatingLockScreenEnabled={rotating}")
         except FileNotFoundError:
-            rotating = 1
+            # Key missing = default ON on most systems
+            reasons.append("RotatingLockScreenEnabled=missing(default ON)")
         winreg.CloseKey(key)
-        is_on = (rotating != 0)
-        detail = f"RotatingLockScreenEnabled = {rotating} ({'ON' if is_on else 'OFF'})"
-        return is_on, detail
-    except Exception as e:
-        return False, f"Could not read registry: {e}"
+    except Exception:
+        pass
+
+    # Check 2: Lock Screen Creative subkey (present when Spotlight is active)
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Lock Screen\Creative",
+            0, winreg.KEY_READ)
+        winreg.CloseKey(key)
+        reasons.append("LockScreen\\Creative key exists")
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+    # Check 3: Policy LockScreenType=2
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Policies\Microsoft\Windows\Personalization",
+            0, winreg.KEY_READ)
+        try:
+            ls_type, _ = winreg.QueryValueEx(key, "LockScreenType")
+            if ls_type == 2:
+                reasons.append(f"LockScreenType={ls_type}(Spotlight)")
+        except FileNotFoundError:
+            pass
+        winreg.CloseKey(key)
+    except Exception:
+        pass
+
+    is_on = len(reasons) > 0
+    detail = ", ".join(reasons) if reasons else "all checks = OFF"
+    return is_on, detail
 
 
 def disable_spotlight(log_fn):

@@ -4,7 +4,7 @@ Writes or deletes PersonalizationCSP registry key and exits."""
 import sys, winreg, datetime, os
 
 MODE     = "set"
-IMG_PATH = r"C:\Users\my4nt\.qigor-wallpaper\saved_wallpapers\sn47.1-only-way-2k.png"
+IMG_PATH = r"C:\Users\my4nt\.qigor-wallpaper\saved_wallpapers\9siv-evam-2k.png"
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "_lockscreen_helper_log.txt")
 

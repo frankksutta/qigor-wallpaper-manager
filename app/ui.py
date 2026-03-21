@@ -284,25 +284,14 @@ def build_ui(app):
     Tooltip(cur_ls_btn, "Preview the image currently set as your lock screen.")
 
     ls_pers_row = tk.Frame(lock_frame)
-    ls_pers_row.pack(fill=tk.X, padx=6, pady=(0, 4))
-
-    app._spotlight_var = tk.StringVar(value="")
-    app._spotlight_lbl = tk.Label(ls_pers_row, textvariable=app._spotlight_var,
-        font=("Segoe UI", 8), anchor=tk.W)
-    app._spotlight_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    ls_pers_row.pack(fill=tk.X, padx=6, pady=(0, 6))
 
     c = BTN_COLORS["primary"]
     app._ls_pers_btn = tk.Button(ls_pers_row, text="⚙  Personalize Lock Screen",
         font=("Segoe UI", 8),
         bg=c["bg"], fg=c["fg"], activebackground=c["active"],
         command=app._ls_personalize_or_release)
-    app._ls_pers_btn.pack(side=tk.RIGHT)
-
-    spotlight_row = tk.Frame(lock_frame)
-    spotlight_row.pack(fill=tk.X, padx=6, pady=(0, 6))
-    app._spotlight_status_lbl = tk.Label(spotlight_row,
-        text="", font=("Segoe UI", 8), anchor=tk.W)
-    app._spotlight_status_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    app._ls_pers_btn.pack(side=tk.LEFT)
 
     # ── Last changed banner ───────────────────────────────────────────────────
     app._last_changed_var = tk.StringVar(value="")
