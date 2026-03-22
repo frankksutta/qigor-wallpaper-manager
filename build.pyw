@@ -55,6 +55,40 @@ RELEASE_NAME = "QiGor Wallpaper Manager — Latest"
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+# ── Tooltip ───────────────────────────────────────────────────────────────────
+
+class Tooltip:
+    """600ms hover tooltip."""
+    _delay = 600
+
+    def __init__(self, widget, text):
+        self.widget, self.text = widget, text
+        self._id = self._win = None
+        widget.bind("<Enter>",   self._schedule)
+        widget.bind("<Leave>",   self._cancel)
+        widget.bind("<Button>",  self._cancel)
+        widget.bind("<Destroy>", self._cancel)
+
+    def _schedule(self, _=None):
+        self._cancel()
+        self._id = self.widget.after(self._delay, self._show)
+
+    def _cancel(self, _=None):
+        if self._id:  self.widget.after_cancel(self._id); self._id = None
+        if self._win: self._win.destroy(); self._win = None
+
+    def _show(self):
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self._win = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry("+{}+{}".format(x, y))
+        tk.Label(tw, text=self.text, justify=tk.LEFT,
+                 background="#ffffe0", foreground="#000000",
+                 relief=tk.SOLID, borderwidth=1,
+                 font=("Segoe UI", 9), wraplength=380, padx=6, pady=4).pack()
+
+
 class Config:
     def __init__(self):
         self._dir  = Path.home() / ".qigor-wallpaper" / "build_config.json"
@@ -119,10 +153,21 @@ LOG_COLORS_LIGHT = {
 }
 
 BTNS = {
-    "build":   dict(bg="#1a6b2e", fg="#fff", abg="#1e8038", text="🔨  Build EXE"),
-    "github":  dict(bg="#1565c0", fg="#fff", abg="#1976d2", text="🐙  Upload Release"),
-    "clean":   dict(bg="#7a1c1c", fg="#fff", abg="#9e2020", text="🧹  Clean"),
-    "gen_ico": dict(bg="#7a5c00", fg="#fff", abg="#9a7400", text="🖼  Regenerate Icon"),
+    "build":   dict(bg="#1a6b2e", fg="#fff", abg="#1e8038", text="🔨  Build EXE",
+                    tip="Run PyInstaller to bundle the app into a single portable .exe.\n"
+                        "Bundles app/, assets/, and tkinterdnd2 DLLs.\n"
+                        "Takes 30–90 seconds. Output: QiGor_Wallpaper_Manager.exe"),
+    "github":  dict(bg="#1565c0", fg="#fff", abg="#1976d2", text="🐙  Upload Release",
+                    tip="Upload QiGor_Wallpaper_Manager.exe to a GitHub Release.\n"
+                        "Creates the repo and 'latest' release tag if they don't exist.\n"
+                        "Requires a GitHub token with 'repo' scope."),
+    "clean":   dict(bg="#7a1c1c", fg="#fff", abg="#9e2020", text="🧹  Clean",
+                    tip="Remove PyInstaller build artifacts: build/, dist/, *.spec\n"
+                        "Safe to run any time. Does not delete the .exe output."),
+    "gen_ico": dict(bg="#7a5c00", fg="#fff", abg="#9a7400", text="🖼  Regenerate Icon",
+                    tip="Crop the gorilla from the banner image and generate\n"
+                        "a multi-size .ico file (16/32/48/64/128/256px).\n"
+                        "Saved to assets/qigor_wallpaper_manager.ico"),
 }
 
 
@@ -283,12 +328,22 @@ class App:
                                     command=self._toggle_theme,
                                     relief=tk.FLAT, padx=8)
         self._theme_btn.pack(side=tk.LEFT)
-        tk.Button(tb, text="A+", relief=tk.FLAT, padx=6,
-                  command=lambda: self._chg_font(1)).pack(side=tk.LEFT)
-        tk.Button(tb, text="A−", relief=tk.FLAT, padx=6,
-                  command=lambda: self._chg_font(-1)).pack(side=tk.LEFT)
-        tk.Button(tb, text="Clear Log", relief=tk.FLAT, padx=8,
-                  command=self._clear_log).pack(side=tk.RIGHT)
+        Tooltip(self._theme_btn, "Toggle dark / light theme.")
+
+        afont = tk.Button(tb, text="A+", relief=tk.FLAT, padx=6,
+                  command=lambda: self._chg_font(1))
+        afont.pack(side=tk.LEFT)
+        Tooltip(afont, "Increase console font size.")
+
+        afont2 = tk.Button(tb, text="A−", relief=tk.FLAT, padx=6,
+                  command=lambda: self._chg_font(-1))
+        afont2.pack(side=tk.LEFT)
+        Tooltip(afont2, "Decrease console font size.")
+
+        clr = tk.Button(tb, text="Clear Log", relief=tk.FLAT, padx=8,
+                  command=self._clear_log)
+        clr.pack(side=tk.RIGHT)
+        Tooltip(clr, "Clear the output console.")
 
         content = tk.Frame(self.root)
         content.pack(fill=tk.BOTH, expand=True, padx=10, pady=2)
@@ -321,6 +376,10 @@ class App:
         self._tok_entry = tk.Entry(tok_row, textvariable=self._token_var,
                                    font=("Consolas", self._fsize), show="*")
         self._tok_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        Tooltip(self._tok_entry,
+                "GitHub Personal Access Token with 'repo' scope.\n"
+                "Create one at: github.com/settings/tokens\n"
+                "Stored in ~/.qigor-wallpaper/build_config.json")
         self._show_tok = tk.BooleanVar(value=False)
         tk.Checkbutton(tok_row, text="Show", variable=self._show_tok,
                        command=lambda: self._tok_entry.config(
@@ -344,6 +403,7 @@ class App:
                             font=("Segoe UI", 11, "bold"), height=2,
                             relief=tk.FLAT, cursor="hand2", command=cmd)
             btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+            Tooltip(btn, b["tip"])
             self._btns[key] = btn
 
         # ── Git source sync ───────────────────────────────────────────────────
@@ -355,18 +415,23 @@ class App:
         self._git_btns = []
         for label, cmd, tip in [
             ("1 – Setup",   self._git_setup,
-             "First-time: git init, initial commit, add remote.\nSafe to re-run."),
+             "First-time setup: git init, create .gitignore, initial commit,\n"
+             "add GitHub remote, and create the repo via API if needed.\n"
+             "Safe to re-run — skips steps already done."),
             ("2 – Commit",  self._git_commit,
-             "Stage all changes and create a dated git commit."),
+             "Stage all changes (git add -A) and create a timestamped commit.\n"
+             "Shows what changed before committing."),
             ("3 – Push",    self._git_push,
-             "Push committed changes to GitHub."),
+             "Push committed changes to GitHub (git push -u origin main).\n"
+             "Requires the repo to exist and token to have push access."),
             ("4 – Status",  self._git_status,
-             "Show git status, last commits, remote URL."),
+             "Show git remote, last 5 commits, and any uncommitted changes."),
         ]:
             b = tk.Button(git_row, text=label, width=16, height=2,
                           font=("Segoe UI", 10, "bold"), command=cmd,
                           relief=tk.FLAT, cursor="hand2")
             b.pack(side=tk.LEFT, padx=6)
+            Tooltip(b, tip)
             self._git_btns.append(b)
 
         # ── Console ───────────────────────────────────────────────────────────
