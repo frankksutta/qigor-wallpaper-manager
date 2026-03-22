@@ -971,8 +971,11 @@ class App:
 
         repo_url = "https://github.com/{}/{}".format(GITHUB_USER, GITHUB_REPO)
         self._git("remote", "add", "origin", repo_url)
+        branch, _ = self._git_out("rev-parse", "--abbrev-ref", "HEAD")
+        if not branch:
+            branch = "master"
         self._log("", "info")
-        self._log("✅  Setup complete!", "success")
+        self._log("✅  Setup complete!  (branch: {})".format(branch), "success")
         self._log("Click '3 – Push' to publish to GitHub.", "info")
 
     def _do_git_commit(self):
@@ -992,9 +995,14 @@ class App:
 
     def _do_git_push(self):
         self._section("GIT PUSH")
+        # Detect the actual current branch name
+        branch, rc = self._git_out("rev-parse", "--abbrev-ref", "HEAD")
+        if rc != 0 or not branch:
+            branch = "master"
+        self._log("Branch: {}".format(branch), "info")
         self._log("Pushing to github.com/{}/{}...".format(
             GITHUB_USER, GITHUB_REPO), "info")
-        rc = self._git("push", "-u", "origin", "main")
+        rc = self._git("push", "-u", "origin", branch)
         if rc == 0:
             self._log("✅  Push complete!", "success")
             self._log("  https://github.com/{}/{}".format(
@@ -1002,9 +1010,8 @@ class App:
         else:
             self._log("Push failed — see output above.", "error")
             self._log("Common causes:", "warning")
-            self._log("  • Repo doesn't exist yet — run '1 – Setup' first", "warning")
             self._log("  • Token doesn't have repo push access", "warning")
-            self._log("  • Branch name: try 'master' if 'main' fails", "warning")
+            self._log("  • Remote URL incorrect — check '4 – Status'", "warning")
 
     def _do_git_status(self):
         self._section("GIT STATUS")
