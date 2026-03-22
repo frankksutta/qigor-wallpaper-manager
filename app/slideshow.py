@@ -2,7 +2,7 @@
 slideshow.py  —  QiGor Wallpaper Manager
 Wallpaper slideshow via Windows Task Scheduler.
 
-A helper script (_wallpaper_slideshow.py) is written next to the main app
+A helper script is written to HELPERS_DIR (~/.qigor-wallpaper/helpers/)
 and scheduled via schtasks. It runs on a timer, picks the next image,
 sets it, updates state, and exits. No persistent background process.
 
@@ -19,7 +19,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from pathlib import Path
 
-from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR, WALLPAPER_STYLES
+from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR, WALLPAPER_STYLES, HELPERS_DIR
 from .wallpaper import find_python_exe
 
 TASK_NAME  = "QiGorWallpaperSlideshow"
@@ -105,14 +105,18 @@ def remove_task() -> bool:
         return False
 
 
+
+
+
 # ── Helper script writer ──────────────────────────────────────────────────────
 
-def write_slideshow_helper(app_dir: Path) -> Path:
+def write_slideshow_helper() -> Path:
     """
-    Write _wallpaper_slideshow.py next to the main app.
-    Built as a list of strings to avoid any f-string or triple-quote issues.
+    Write _wallpaper_slideshow.py to HELPERS_DIR (~/.qigor-wallpaper/helpers/).
+    Fixed location independent of EXE — task path never goes stale on relocation.
     """
-    script = app_dir / "_wallpaper_slideshow.py"
+    HELPERS_DIR.mkdir(parents=True, exist_ok=True)
+    script = HELPERS_DIR / "_wallpaper_slideshow.py"
 
     # STATE_FILE path — use raw string literal in the generated script
     sf_str = str(STATE_FILE).replace("\\", "/")  # forward slashes work on Windows
@@ -232,13 +236,13 @@ def write_slideshow_helper(app_dir: Path) -> Path:
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
-def schedule_task(app_dir: Path, interval_min: int):
+def schedule_task(interval_min: int):
     """
     Schedule the slideshow helper via schtasks MINUTE trigger.
     Returns (success: bool, message: str).
     """
     try:
-        helper = write_slideshow_helper(app_dir)
+        helper = write_slideshow_helper()
 
         pythonw  = find_python_exe()
         username = os.environ.get("USERNAME", "")
@@ -281,12 +285,12 @@ class SlideshowDialog(tk.Toplevel):
     result: "started" | "stopped" | "next" | None
     """
 
-    def __init__(self, parent, cfg, theme_name, font_size, app_dir):
+    def __init__(self, parent, cfg, theme_name, font_size):
         super().__init__(parent)
         self.title("Wallpaper Slideshow")
         self.result   = None
         self._cfg     = cfg
-        self._app_dir = Path(app_dir).resolve()
+
         t = THEMES.get(theme_name, THEMES["dark"])
         self.configure(bg=t["bg"])
         self.resizable(True, False)
@@ -467,9 +471,9 @@ class SlideshowDialog(tk.Toplevel):
 
         self._save_state_from_ui()
         py_path = find_python_exe()
-        ok, msg = schedule_task(self._app_dir, self._get_interval_min())
-        diag = "Python: {}\nApp dir: {}\nFrozen: {}".format(
-            py_path, self._app_dir, getattr(__import__('sys'), 'frozen', False))
+        ok, msg = schedule_task(self._get_interval_min())
+        diag = "Python: {}\nHelpers dir: {}\nFrozen: {}".format(
+            py_path, HELPERS_DIR, getattr(__import__('sys'), 'frozen', False))
 
         t = THEMES.get(self._cfg.get("theme"), THEMES["dark"])
         rw = tk.Toplevel(self)
@@ -514,7 +518,7 @@ class SlideshowDialog(tk.Toplevel):
                 "No image files found in:\n{}".format(folder), parent=self)
             return
         self._save_state_from_ui()
-        helper  = write_slideshow_helper(self._app_dir)
+        helper  = write_slideshow_helper()
         pythonw = find_python_exe()
         try:
             proc = subprocess.Popen(
@@ -532,7 +536,7 @@ class SlideshowDialog(tk.Toplevel):
             messagebox.showerror("Error", str(e), parent=self)
 
     def _view_log(self):
-        log_path = STATE_FILE.parent / "_slideshow_log.txt"
+        log_path = HELPERS_DIR / "_slideshow_log.txt"
         if not log_path.exists():
             messagebox.showinfo("No Log",
                 "No log file yet.\nExpected: {}".format(log_path), parent=self)

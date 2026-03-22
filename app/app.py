@@ -16,8 +16,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
-from .constants import (APP_NAME, APP_VERSION, STORE_DIR, THEMES,
-                        BTN_COLORS, CONSOLE_COLORS, WIN_IMAGE_SOURCES)
+from .constants import (APP_NAME, APP_VERSION, STORE_DIR, HELPERS_DIR,
+                        THEMES, BTN_COLORS, CONSOLE_COLORS, WIN_IMAGE_SOURCES)
 from .config import Config
 from .tooltip import Tooltip
 from .dialogs import AboutDialog, ErrorDialog, _InputDialog, _RenameDialog
@@ -74,6 +74,7 @@ class App:
         self._slideshow_lbl_value = slideshow_lbl
 
         STORE_DIR.mkdir(parents=True, exist_ok=True)
+        HELPERS_DIR.mkdir(parents=True, exist_ok=True)
 
         self._build_ui()
         self._apply_theme()
@@ -86,7 +87,7 @@ class App:
         self.root.after(0, self._update_ls_btn)
 
         if "--remind" in sys.argv:
-            self.root.after(800, self._show_reminder_notification)
+            pass  # handled headlessly in entry point before GUI loads
 
     # ── UI Construction ───────────────────────────────────────────────────────
     # Full _build_ui is in ui.py and patched in via _build_ui() below.
@@ -348,6 +349,7 @@ class App:
 
     def _open_store_folder(self):
         STORE_DIR.mkdir(parents=True, exist_ok=True)
+        HELPERS_DIR.mkdir(parents=True, exist_ok=True)
         os.startfile(str(STORE_DIR))
 
     def _show_current_wallpaper(self):
@@ -812,9 +814,7 @@ class App:
 
     def _do_set_lock_screen(self, img_path):
         try:
-            helper = wp.write_lockscreen_helper(img_path, mode="set")
-            self._log_threadsafe(f"  Helper script: {helper.name}", "dim")
-            if not wp.launch_helper_elevated(helper, self._log_threadsafe):
+            if not wp.launch_elevated("set-lockscreen", str(img_path), self._log_threadsafe):
                 return
             time.sleep(2)
             try:
@@ -852,8 +852,7 @@ class App:
 
     def _do_release_lock_screen(self):
         try:
-            helper = wp.write_lockscreen_helper(mode="release")
-            if not wp.launch_helper_elevated(helper, self._log_threadsafe):
+            if not wp.launch_elevated("release-lockscreen", "", self._log_threadsafe):
                 return
             time.sleep(2)
             import winreg
@@ -906,8 +905,7 @@ class App:
 
     def _do_release_then_settings(self):
         try:
-            helper = wp.write_lockscreen_helper(mode="release")
-            if not wp.launch_helper_elevated(helper, self._log_threadsafe):
+            if not wp.launch_elevated("release-lockscreen", "", self._log_threadsafe):
                 return
             time.sleep(2)
             self._log_threadsafe("✔  Policy removed — opening Settings.", "green")
@@ -1000,7 +998,7 @@ class App:
 
     def _show_slideshow_dialog(self):
         dialog = SlideshowDialog(self.root, self.cfg, self.theme_name, self.font_size,
-                                 app_dir=str(_get_exe_dir()))
+                                 )
         self.root.wait_window(dialog)
         if dialog.result == "started":
             self._slideshow_btn.config(text="🖼 Slideshow ✔")
@@ -1020,7 +1018,7 @@ class App:
 
     def _show_reminder_dialog(self):
         dialog = _ReminderDialog(self.root, self.cfg, self.theme_name, self.font_size,
-                                 app_dir=str(_get_exe_dir()))
+                                 )
         self.root.wait_window(dialog)
         if dialog.result == "set":
             self.cfg.set("reminder_set", True)

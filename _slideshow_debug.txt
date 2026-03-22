@@ -1,2 +1,0 @@
-14:02:16  _start called. folder=C:\Users\my4nt\.qigor-wallpaper\saved_wallpapers interval=1
-14:02:16  app_dir=C:\Users\my4nt\OneDrive\lucid24\py_tools\mp4_movie_and_image_tools\qigor_wallpaper

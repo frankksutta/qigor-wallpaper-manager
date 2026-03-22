@@ -2,15 +2,43 @@
 # -*- coding: utf-8 -*-
 """
 qigor_wallpaper_manager.pyw  —  QiGor Wallpaper Manager v0.7
-Entry point only. All logic lives in app/.
+Entry point. Handles both GUI mode and headless helper modes.
+
+Headless modes (no GUI, called by Task Scheduler or UAC elevation):
+  --next                        advance slideshow to next image
+  --remind                      show wallpaper reminder toast
+  --set-lockscreen "path"       set lock screen image (runs elevated)
+  --release-lockscreen          remove PersonalizationCSP (runs elevated)
 """
 import os
 import sys
 import ctypes as _ct
 from pathlib import Path
 
-# ── Ensure app/ package is importable ────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# ── Headless modes — handle before any GUI or lock file ───────────────────────
+if "--next" in sys.argv:
+    from app.slideshow import _run_next_headless
+    _run_next_headless()
+    sys.exit(0)
+
+if "--remind" in sys.argv:
+    from app.remind_headless import show_reminder_toast
+    show_reminder_toast()
+    sys.exit(0)
+
+if "--set-lockscreen" in sys.argv:
+    from app.wallpaper import _set_lockscreen_headless
+    idx = sys.argv.index("--set-lockscreen")
+    path = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else ""
+    _set_lockscreen_headless(path)
+    sys.exit(0)
+
+if "--release-lockscreen" in sys.argv:
+    from app.wallpaper import _release_lockscreen_headless
+    _release_lockscreen_headless()
+    sys.exit(0)
 
 from app.constants import APP_NAME, APP_VERSION, APP_SLUG
 
@@ -37,7 +65,7 @@ except (IOError, OSError):
         _ct.windll.user32.SetForegroundWindow(_hwnd)
     sys.exit(0)
 
-# ── Create root window ────────────────────────────────────────────────────────
+# ── GUI mode ──────────────────────────────────────────────────────────────────
 import tkinter as tk
 try:
     from tkinterdnd2 import TkinterDnD

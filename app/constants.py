@@ -18,7 +18,8 @@ WALLPAPER_STYLES = {
     "Span":    ("22", "0"),
 }
 
-STORE_DIR = Path.home() / ".qigor-wallpaper" / "saved_wallpapers"
+STORE_DIR   = Path.home() / ".qigor-wallpaper" / "saved_wallpapers"
+HELPERS_DIR = Path.home() / ".qigor-wallpaper" / "helpers"
 
 WIN_IMAGE_SOURCES = [
     {

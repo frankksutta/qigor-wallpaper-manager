@@ -10,8 +10,10 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 from pathlib import Path
 
-from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS
-from .wallpaper import find_python_exe
+from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, HELPERS_DIR
+
+
+
 
 
 class _ReminderDialog(tk.Toplevel):
@@ -22,15 +24,18 @@ class _ReminderDialog(tk.Toplevel):
     """
     TASK_NAME = "QiGorWallpaperReminder"
 
-    def __init__(self, parent, cfg, theme_name, font_size, app_dir):
+    def __init__(self, parent, cfg, theme_name, font_size):
         super().__init__(parent)
         self.title("Wallpaper Change Reminder")
         self.result = None
         self._cfg   = cfg
-        self._app_dir = Path(app_dir)
-        self._app     = str(self._app_dir / (
+        self._app_dir = HELPERS_DIR
+        # Launch target for toast notification — EXE if frozen, else .pyw
+        from .app import _get_exe_dir as _ged
+        _ed = _ged()
+        self._app = str(_ed / (
             "QiGor_Wallpaper_Manager.exe"
-            if (self._app_dir / "QiGor_Wallpaper_Manager.exe").exists()
+            if (_ed / "QiGor_Wallpaper_Manager.exe").exists()
             else "qigor_wallpaper_manager.pyw"
         ))
         self._theme = theme_name
@@ -202,58 +207,27 @@ class _ReminderDialog(tk.Toplevel):
             self._dow_row.pack_forget()
             self._cust_row.pack_forget()
 
-    def _python_exe(self):
-        return find_python_exe()
+    def _get_exe_runner(self):
+        """Return (runner_path, extra_args_prefix) for scheduling."""
+        import sys
+        if getattr(sys, "frozen", False):
+            return sys.executable, ""
+        from .wallpaper import find_python_exe
+        pyw = str(__import__('pathlib').Path(sys.argv[0]).resolve())
+        return find_python_exe(), '"{}" '.format(pyw)
 
-    def _write_notifier_script(self):
-        app_dir = self._app_dir
-        script  = app_dir / "_wallpaper_remind.py"
-        script.write_text(f'''\
-#!/usr/bin/env python
-"""Wallpaper change reminder — run by Windows Task Scheduler."""
-import os, sys, datetime
-APP_PATH = r"{self._app}"
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_remind_log.txt")
 
-def log(msg):
-    with open(LOG_FILE, "a") as f:
-        f.write(f"{{datetime.datetime.now():%Y-%m-%d %H:%M:%S}}  {{msg}}\\n")
-
-def show_toast():
-    log(f"Script started. USER={{os.environ.get('USERNAME','?')}} SESSION={{os.environ.get('SESSIONNAME','?')}}")
-    try:
-        from winotify import Notification, audio
-        n = Notification(
-            app_id   = "Windows PowerShell",
-            title    = "Wallpaper Reminder",
-            msg      = "Time to freshen your desktop wallpaper \\U0001f5bc",
-            duration = "long",
-            launch   = APP_PATH,
-        )
-        n.set_audio(audio.Default, loop=False)
-        n.show()
-        log("Toast shown OK.")
-    except ImportError:
-        log("FAILED: winotify not installed. Run: pip install winotify")
-    except Exception as e:
-        log(f"FAILED: {{e}}")
-
-if __name__ == "__main__":
-    show_toast()
-''', encoding="utf-8")
-        return script
-
-    def _build_schtasks_cmd(self, notifier_script):
-        freq     = self._freq_var.get()
-        t_str    = f"{self._hour_var.get()}:{self._min_var.get()}"
-        pythonw  = self._python_exe()
-        username = __import__("os").environ.get("USERNAME", "")
-        tr = f'"{pythonw}" "{notifier_script}"'
+    def _build_schtasks_cmd(self):
+        import sys, os as _os
+        freq    = self._freq_var.get()
+        t_str   = "{}:{}".format(self._hour_var.get(), self._min_var.get())
+        username = _os.environ.get("USERNAME", "")
+        runner, prefix = self._get_exe_runner()
+        tr = '"{}" {}--remind'.format(runner, prefix)
         base = ["schtasks", "/create", "/f",
                 "/tn", self.TASK_NAME,
                 "/tr", tr,
                 "/st", t_str,
-                "/rl", "LIMITED",
                 "/it",
                 "/ru", username]
         if freq == "daily":
@@ -276,13 +250,7 @@ if __name__ == "__main__":
         self._cfg.set("reminder_min",   self._min_var.get())
 
     def _schedule(self):
-        try:
-            notifier = self._write_notifier_script()
-        except Exception as e:
-            messagebox.showerror("Error writing notifier",
-                f"Could not write helper script:\n{e}", parent=self)
-            return
-        cmd = self._build_schtasks_cmd(notifier)
+        cmd = self._build_schtasks_cmd()
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
@@ -294,9 +262,7 @@ if __name__ == "__main__":
                 detail = query.stdout.strip() if query.returncode == 0 else ""
                 messagebox.showinfo("Reminder Scheduled",
                     f"Task scheduled — use 'Test Toast Now' to verify.\n\n"
-                    f"Script: {notifier}\n"
-                    f"Python: {self._python_exe()}\n\n"
-                    f"{detail}", parent=self)
+                    "Runner: {}\n\n{}".format(self._get_exe_runner()[0], detail), parent=self)
                 self.destroy()
             else:
                 messagebox.showerror("Scheduler Error",
@@ -307,31 +273,31 @@ if __name__ == "__main__":
 
     def _test_toast(self):
         try:
-            notifier = self._write_notifier_script()
-            pythonw  = self._python_exe()
+            runner, prefix = self._get_exe_runner()
+            if prefix:
+                # Script mode: runner=pythonw, prefix='"path/to.pyw" '
+                # prefix contains the pyw path in quotes — strip quotes for Popen list
+                import shlex
+                pyw = shlex.split(prefix.strip())[0]
+                cmd = [runner, pyw, "--remind"]
+            else:
+                # Frozen EXE mode
+                cmd = [runner, "--remind"]
             subprocess.Popen(
-                [pythonw, str(notifier)],
+                cmd,
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL)
             time.sleep(3)
-            err_log = self._app_dir / "_remind_error.txt"
-            if err_log.exists():
-                err = err_log.read_text(encoding="utf-8", errors="replace").strip()
-                err_log.unlink()
-                messagebox.showerror("Toast Failed",
-                    f"The notifier ran but hit an error:\n\n{err}\n\n"
-                    f"Python used: {pythonw}\nScript: {notifier}", parent=self)
-            else:
-                messagebox.showinfo("Test Fired",
-                    "Notifier ran — did a toast appear?\n\n"
-                    "Check the bottom-right corner or Action Center (bell icon).\n\n"
-                    f"Python: {pythonw}\nScript: {notifier}", parent=self)
+            messagebox.showinfo("Test Fired",
+                "Notifier ran — did a toast appear?\n\n"
+                "Check the bottom-right corner or Action Center (bell icon).\n\n"
+                "Runner: {}".format(runner), parent=self)
         except Exception as e:
             messagebox.showerror("Test Failed", str(e), parent=self)
 
     def _show_log(self):
-        log_path = self._app_dir / "_remind_log.txt"
+        log_path = HELPERS_DIR / "_remind_log.txt"
         if not log_path.exists():
             messagebox.showinfo("Reminder Log",
                 f"No log file found yet.\nExpected:\n{log_path}", parent=self)

@@ -15,7 +15,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from .constants import WALLPAPER_STYLES, STORE_DIR
+from .constants import WALLPAPER_STYLES, STORE_DIR, HELPERS_DIR
 
 
 # ── Image file extensions we recognise ───────────────────────────────────────
@@ -255,100 +255,110 @@ def csp_is_set() -> bool:
         return False
 
 
-def write_lockscreen_helper(img_path=None, mode="set") -> Path:
+def _set_lockscreen_headless(img_path: str):
     """
-    Write _lockscreen_helper.py next to the main app.
-    mode='set'     — writes PersonalizationCSP with img_path
-    mode='release' — deletes PersonalizationCSP entirely
+    Runs elevated (via UAC re-launch with --set-lockscreen).
+    Writes PersonalizationCSP registry key.
     """
-    import sys
-    app_dir = Path(sys.argv[0]).resolve().parent
-    helper  = app_dir / "_lockscreen_helper.py"
-    img_arg = str(img_path) if img_path else ""
-    helper.write_text(f'''\
-#!/usr/bin/env python
-"""Lock screen helper — launched elevated by QiGor Wallpaper Manager.
-Writes or deletes PersonalizationCSP registry key and exits."""
-import sys, winreg, datetime, os
+    import datetime as _dt
+    log_file = HELPERS_DIR / "_lockscreen_helper_log.txt"
+    HELPERS_DIR.mkdir(parents=True, exist_ok=True)
 
-MODE     = "{mode}"
-IMG_PATH = r"{img_arg}"
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "_lockscreen_helper_log.txt")
+    def log(msg):
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "  " + msg + "\n")
 
-def log(msg):
-    with open(LOG_FILE, "a") as f:
-        f.write(f"{{datetime.datetime.now():%Y-%m-%d %H:%M:%S}}  {{msg}}\\n")
-
-CSP_ROOT = winreg.HKEY_LOCAL_MACHINE
-CSP_PATH = r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PersonalizationCSP"
-
-def set_lock_screen(path):
+    CSP_PATH = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP"
+    log("SET called: " + img_path)
     try:
         try:
-            key = winreg.OpenKey(CSP_ROOT, CSP_PATH, 0,
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, CSP_PATH, 0,
                                  winreg.KEY_SET_VALUE | winreg.KEY_CREATE_SUB_KEY)
         except FileNotFoundError:
-            key = winreg.CreateKey(CSP_ROOT, CSP_PATH)
-        winreg.SetValueEx(key, "LockScreenImagePath",   0, winreg.REG_SZ, path)
-        winreg.SetValueEx(key, "LockScreenImageUrl",    0, winreg.REG_SZ, path)
+            key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, CSP_PATH)
+        winreg.SetValueEx(key, "LockScreenImagePath",   0, winreg.REG_SZ, img_path)
+        winreg.SetValueEx(key, "LockScreenImageUrl",    0, winreg.REG_SZ, img_path)
         winreg.SetValueEx(key, "LockScreenImageStatus", 0, winreg.REG_DWORD, 1)
         winreg.CloseKey(key)
-        log(f"SET OK: {{path}}")
+        log("SET OK")
     except Exception as e:
-        log(f"SET FAILED: {{e}}")
-        sys.exit(1)
+        log("SET FAILED: " + str(e))
+        import sys; sys.exit(1)
 
-def release_lock_screen():
+
+def _release_lockscreen_headless():
+    """
+    Runs elevated (via UAC re-launch with --release-lockscreen).
+    Deletes PersonalizationCSP registry key.
+    """
+    import datetime as _dt
+    log_file = HELPERS_DIR / "_lockscreen_helper_log.txt"
+    HELPERS_DIR.mkdir(parents=True, exist_ok=True)
+
+    def log(msg):
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "  " + msg + "\n")
+
+    CSP_PATH = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP"
+    log("RELEASE called")
     try:
         try:
-            key = winreg.OpenKey(CSP_ROOT, CSP_PATH, 0,
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, CSP_PATH, 0,
                                  winreg.KEY_SET_VALUE | winreg.KEY_CREATE_SUB_KEY)
-            for val in ("LockScreenImagePath", "LockScreenImageUrl",
-                        "LockScreenImageStatus"):
-                try:
-                    winreg.DeleteValue(key, val)
-                except FileNotFoundError:
-                    pass
+            for val in ("LockScreenImagePath", "LockScreenImageUrl", "LockScreenImageStatus"):
+                try: winreg.DeleteValue(key, val)
+                except FileNotFoundError: pass
             winreg.CloseKey(key)
         except FileNotFoundError:
             pass
         try:
-            winreg.DeleteKey(CSP_ROOT,
-                r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PersonalizationCSP")
+            winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE, CSP_PATH)
         except Exception:
             pass
         log("RELEASE OK")
     except Exception as e:
-        log(f"RELEASE FAILED: {{e}}")
-        sys.exit(1)
+        log("RELEASE FAILED: " + str(e))
+        import sys; sys.exit(1)
 
-if __name__ == "__main__":
-    if MODE == "release":
-        release_lock_screen()
+
+def launch_elevated(mode: str, img_path: str, log_fn) -> bool:
+    """
+    Re-launch THIS EXE (or pyw) elevated via UAC with --set-lockscreen or
+    --release-lockscreen. No external Python or helper script needed.
+    """
+    if getattr(sys, "frozen", False):
+        exe = sys.executable
+        args = '"--{}" "{}"'.format(mode, img_path) if img_path else '"--{}"'.format(mode)
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", exe, args, str(Path(exe).parent), 0)
     else:
-        set_lock_screen(IMG_PATH)
-''', encoding="utf-8")
-    return helper
+        from .wallpaper import find_python_exe  # noqa — self ref ok
+        py  = find_python_exe()
+        pyw = str(Path(sys.argv[0]).resolve())
+        args = '"{}" "--{}" "{}"'.format(pyw, mode, img_path) if img_path \
+               else '"{}" "--{}"'.format(pyw, mode)
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", py, args, str(Path(pyw).parent), 0)
 
-
-def launch_helper_elevated(helper: Path, log_fn) -> bool:
-    """Launch a .py helper elevated via UAC. Returns True if launched OK."""
-    import sys
-    py = Path(sys.executable)
-    pythonw = py.parent / "pythonw.exe"
-    if not pythonw.exists():
-        pythonw = py
-    ret = ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", str(pythonw),
-        f'"{helper}"', str(helper.parent), 0)
     if ret <= 32:
         if ret == 5:
             log_fn("◼  UAC cancelled.")
         else:
-            log_fn(f"✖  Helper launch failed (code {ret}).")
+            log_fn("✖  Elevation failed (code {}).".format(ret))
         return False
     return True
+
+
+# Keep old name as alias so callers don't break
+def write_lockscreen_helper(img_path=None, mode="set"):
+    """Deprecated — returns None. Elevation now done via launch_elevated()."""
+    return None
+
+
+def launch_helper_elevated(helper, log_fn) -> bool:
+    """Deprecated alias — calls launch_elevated() instead."""
+    mode = "release-lockscreen" if helper is None else "set-lockscreen"
+    return launch_elevated(mode, "", log_fn)
 
 
 def find_current_lock_screen_image() -> tuple[str | None, str]:
