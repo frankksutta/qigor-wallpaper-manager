@@ -101,6 +101,17 @@ def build_ui(app):
             "to change your wallpaper — daily, weekly, or every N days.\n\n"
             "Uses Windows Task Scheduler (no background process).")
 
+    c = BTN_COLORS["primary"]
+    slideshow_lbl = getattr(app, "_slideshow_lbl_value", "🖼 Slideshow")
+    app._slideshow_btn = tk.Button(toolbar, text=slideshow_lbl,
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              command=app._show_slideshow_dialog)
+    app._slideshow_btn.pack(side=tk.LEFT, padx=(4, 2))
+    Tooltip(app._slideshow_btn,
+            "Auto-rotate wallpapers from your store folder.\n"
+            "Uses Windows Task Scheduler — no background process.\n"
+            "Images are shuffled and cycle through before repeating.")
+
     clr_btn = tk.Button(toolbar, text="Clear Log", command=app._clear_log)
     clr_btn.pack(side=tk.RIGHT)
     Tooltip(clr_btn, "Clear the log console.  Ctrl+L")

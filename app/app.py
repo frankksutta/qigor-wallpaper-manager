@@ -22,6 +22,19 @@ from .config import Config
 from .tooltip import Tooltip
 from .dialogs import AboutDialog, ErrorDialog, _InputDialog, _RenameDialog
 from .reminder import _ReminderDialog
+from .slideshow import SlideshowDialog, is_scheduled as slideshow_is_scheduled
+
+
+def _get_exe_dir() -> Path:
+    """
+    Return the directory containing the running app.
+    Works correctly in both script mode and PyInstaller frozen EXE.
+    - Frozen EXE: sys.executable = path to .exe  → use its parent
+    - Script:     sys.argv[0]    = path to .pyw  → use its parent
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(sys.argv[0]).resolve().parent
 from . import wallpaper as wp
 from . import preview as pv
 from . import dnd as dnd_mod
@@ -56,7 +69,9 @@ class App:
         self._preview_raw   = None
         self._dnd_available = False
 
-        self._pending_path.trace_add("write", self._on_path_changed)
+        # Slideshow button label reflects running state
+        slideshow_lbl = "🖼 Slideshow ✔" if slideshow_is_scheduled() else "🖼 Slideshow"
+        self._slideshow_lbl_value = slideshow_lbl
 
         STORE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -983,9 +998,29 @@ class App:
 
     # ── Reminder ──────────────────────────────────────────────────────────────
 
+    def _show_slideshow_dialog(self):
+        dialog = SlideshowDialog(self.root, self.cfg, self.theme_name, self.font_size,
+                                 app_dir=str(_get_exe_dir()))
+        self.root.wait_window(dialog)
+        if dialog.result == "started":
+            self._slideshow_btn.config(text="🖼 Slideshow ✔")
+            self._log("Wallpaper slideshow started.", "green")
+        elif dialog.result == "stopped":
+            self._slideshow_btn.config(text="🖼 Slideshow")
+            self._log("Wallpaper slideshow stopped.", "yellow")
+        elif dialog.result == "next":
+            from .slideshow import load_state as ss_load_state
+            state = ss_load_state()
+            last = state.get("last_file", "")
+            if last:
+                self._log(f"⏭  Slideshow → {last}", "cyan")
+            else:
+                self._log("⏭  Slideshow advanced to next image.", "cyan")
+            self.root.after(500, self._show_current_wallpaper)
+
     def _show_reminder_dialog(self):
         dialog = _ReminderDialog(self.root, self.cfg, self.theme_name, self.font_size,
-                                 app_path=str(Path(sys.argv[0]).resolve()))
+                                 app_dir=str(_get_exe_dir()))
         self.root.wait_window(dialog)
         if dialog.result == "set":
             self.cfg.set("reminder_set", True)
@@ -1005,7 +1040,7 @@ class App:
                 app_id="QiGor Wallpaper Manager",
                 title="Wallpaper Reminder",
                 msg=msg, duration="short",
-                launch=f'pythonw "{str(Path(sys.argv[0]).resolve())}"')
+                launch=str(_get_exe_dir() / ("QiGor_Wallpaper_Manager.exe" if getattr(sys, "frozen", False) else "qigor_wallpaper_manager.pyw")))
             toast.set_audio(audio.Default, loop=False)
             toast.show()
             notified = True

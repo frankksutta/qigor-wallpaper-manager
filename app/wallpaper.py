@@ -23,6 +23,66 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
               ".tiff", ".tif", ".avif", ".heic", ".svg"}
 
 
+
+import sys
+
+
+def find_python_exe() -> str:
+    """
+    Return the path to pythonw.exe (or python.exe) for running helper scripts.
+
+    When frozen as a PyInstaller EXE, sys.executable is the EXE itself — not
+    python.exe. We must find the real Python installation separately.
+
+    Strategy (frozen only):
+      1. PATH lookup
+      2. Windows registry (PythonCore)
+      3. Fallback to "python.exe"
+    Script mode: sys.executable is always correct.
+    """
+    if not getattr(sys, "frozen", False):
+        py = Path(sys.executable)
+        pw = py.parent / "pythonw.exe"
+        return str(pw) if pw.exists() else str(py)
+
+    # Frozen — find real Python
+    import shutil as _sh
+    for name in ("pythonw.exe", "python.exe"):
+        found = _sh.which(name)
+        if found:
+            return found
+
+    try:
+        import winreg as _wr
+        for root in (_wr.HKEY_CURRENT_USER, _wr.HKEY_LOCAL_MACHINE):
+            for base in (
+                r"SOFTWARE\Python\PythonCore",
+                r"SOFTWARE\WOW6432Node\Python\PythonCore",
+            ):
+                try:
+                    with _wr.OpenKey(root, base) as bk:
+                        versions, i = [], 0
+                        while True:
+                            try: versions.append(_wr.EnumKey(bk, i)); i += 1
+                            except OSError: break
+                        for ver in sorted(versions, reverse=True):
+                            try:
+                                with _wr.OpenKey(bk, ver + r"\InstallPath") as ik:
+                                    ipath, _ = _wr.QueryValueEx(ik, "")
+                                    for name in ("pythonw.exe", "python.exe"):
+                                        c = Path(ipath) / name
+                                        if c.exists():
+                                            return str(c)
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+    except Exception:
+        pass
+
+    return "python.exe"
+
+
 def normalize_src(src: str) -> str:
     """Normalize file:// URIs; pass everything else through."""
     if not src:

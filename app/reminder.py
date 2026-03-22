@@ -11,6 +11,7 @@ from tkinter import ttk, scrolledtext, messagebox
 from pathlib import Path
 
 from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS
+from .wallpaper import find_python_exe
 
 
 class _ReminderDialog(tk.Toplevel):
@@ -21,12 +22,17 @@ class _ReminderDialog(tk.Toplevel):
     """
     TASK_NAME = "QiGorWallpaperReminder"
 
-    def __init__(self, parent, cfg, theme_name, font_size, app_path):
+    def __init__(self, parent, cfg, theme_name, font_size, app_dir):
         super().__init__(parent)
         self.title("Wallpaper Change Reminder")
         self.result = None
         self._cfg   = cfg
-        self._app   = app_path
+        self._app_dir = Path(app_dir)
+        self._app     = str(self._app_dir / (
+            "QiGor_Wallpaper_Manager.exe"
+            if (self._app_dir / "QiGor_Wallpaper_Manager.exe").exists()
+            else "qigor_wallpaper_manager.pyw"
+        ))
         self._theme = theme_name
         t = THEMES.get(theme_name, THEMES["dark"])
         self.configure(bg=t["bg"])
@@ -197,12 +203,10 @@ class _ReminderDialog(tk.Toplevel):
             self._cust_row.pack_forget()
 
     def _python_exe(self):
-        py = Path(sys.executable)
-        pw = py.parent / "pythonw.exe"
-        return str(pw) if pw.exists() else str(py)
+        return find_python_exe()
 
     def _write_notifier_script(self):
-        app_dir = Path(self._app).parent
+        app_dir = self._app_dir
         script  = app_dir / "_wallpaper_remind.py"
         script.write_text(f'''\
 #!/usr/bin/env python
@@ -311,7 +315,7 @@ if __name__ == "__main__":
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL)
             time.sleep(3)
-            err_log = Path(self._app).parent / "_remind_error.txt"
+            err_log = self._app_dir / "_remind_error.txt"
             if err_log.exists():
                 err = err_log.read_text(encoding="utf-8", errors="replace").strip()
                 err_log.unlink()
@@ -327,7 +331,7 @@ if __name__ == "__main__":
             messagebox.showerror("Test Failed", str(e), parent=self)
 
     def _show_log(self):
-        log_path = Path(self._app).parent / "_remind_log.txt"
+        log_path = self._app_dir / "_remind_log.txt"
         if not log_path.exists():
             messagebox.showinfo("Reminder Log",
                 f"No log file found yet.\nExpected:\n{log_path}", parent=self)

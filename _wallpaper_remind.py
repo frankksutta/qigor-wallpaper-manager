@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Wallpaper change reminder — run by Windows Task Scheduler."""
 import os, sys, datetime
-APP_PATH = r"C:\Users\my4nt\OneDrive\lucid24\py_tools\mp4_movie_and_image_tools\qigor_wallpaper\qigor_wallpaper_manager.pyw"
+APP_PATH = r"C:\Users\my4nt\OneDrive\lucid24\py_tools\mp4_movie_and_image_tools\qigor_wallpaper\QiGor_Wallpaper_Manager.exe"
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_remind_log.txt")
 
 def log(msg):

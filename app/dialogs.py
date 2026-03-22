@@ -19,7 +19,7 @@ class AboutDialog(tk.Toplevel):
         self.configure(bg=t["bg"])
         self.resizable(True, True)
         self.minsize(480, 360)
-        self.geometry("560x520")
+        self.geometry("580x600")
         self.grab_set()
         fn  = ("Segoe UI", font_size)
         fnb = ("Segoe UI", font_size + 2, "bold")
@@ -61,50 +61,76 @@ class AboutDialog(tk.Toplevel):
                  fg=CONSOLE_COLORS[theme_name]["dim"]).pack(anchor=tk.W, pady=(2, 12))
 
         desc = (
-            "Windows 11 makes changing your wallpaper surprisingly tedious — "
-            "buried inside Settings → Personalization → Background, with no "
-            "easy way to use an image you found online.\n\n"
-            "This app fixes that. Drag an image file straight from Windows "
-            "Explorer, or drag/paste an image address from any web browser, "
-            "pick your display style (Fill, Fit, Stretch, Tile, Center, Span), "
-            "and set it instantly — no Settings digging required.\n\n"
-            "Your wallpaper history is saved so you can re-apply past images "
-            "with one click. Save favourite folders and gallery websites for "
-            "quick access. Images can be copied to a local store so your "
-            "wallpaper never breaks if the original file moves or is deleted.\n\n"
+            "Your desktop, your way — without digging through Settings.\n\n"
+
+            "── WHAT IT DOES ─────────────────────────────────────────\n\n"
+
+            "Windows buries wallpaper changes four clicks deep. QiGor fixes "
+            "that. Drag an image from your desktop, drop a URL from your "
+            "browser, or browse your files — and your wallpaper changes "
+            "instantly. Every image you set is saved to a local store and "
+            "remembered in your history, so you can go back to any past "
+            "wallpaper in one click.\n\n"
+
+            "── SLIDESHOW ────────────────────────────────────────────\n\n"
+
+            "QiGor's slideshow is smarter than the Windows built-in version. "
+            "Windows Slideshow is locked to one folder, has no shuffle memory "
+            "(it can repeat the same image twice in a row), and stops the "
+            "moment you touch any wallpaper setting. QiGor's slideshow "
+            "shuffles your entire collection and guarantees every image plays "
+            "once before any repeats. It runs silently via Windows Task "
+            "Scheduler — no background app eating memory — and keeps working "
+            "even after a reboot. New images you download are automatically "
+            "added to the rotation in the next cycle.\n\n"
+
+            "── REMINDERS ────────────────────────────────────────────\n\n"
+
+            "Sometimes you forget to change your wallpaper for months. The "
+            "reminder feature sends you a quiet Windows notification — "
+            "daily, weekly, or every N days — nudging you to pick something "
+            "fresh. It appears in the bottom-right corner and sits in Action "
+            "Center without interrupting your work. Also uses Task Scheduler, "
+            "so nothing runs in the background.\n\n"
+
             "── LOCK SCREEN ──────────────────────────────────────────\n\n"
-            "The 'Set Lock Screen' button uses the Windows.System.UserProfile."
-            "LockScreen PowerShell API (available since Windows 10 version 1607).\n\n"
-            "Known limitations and compatibility issues:\n\n"
-            "• SPOTLIGHT: If Windows Spotlight is enabled (Settings → "
-            "Personalization → Lock screen → 'Windows Spotlight'), it will "
-            "override any image you set. Turn it off and set to 'Picture' first.\n\n"
-            "• ENTERPRISE / MANAGED PCs: Group Policy or MDM (Intune, "
-            "SCCM etc.) can lock the lock screen image. You will see an "
-            "Access Denied error. Contact your IT department.\n\n"
-            "• WINDOWS EDITIONS: Works on Windows 10 Home, Pro, and "
-            "Windows 11 Home/Pro with a local or Microsoft account. "
-            "Azure AD / work accounts on Windows 11 Enterprise may be "
-            "restricted by policy.\n\n"
-            "• REGISTRY FALLBACK: If the PowerShell API fails, the app "
-            "tries a registry method which copies the image to "
-            "%AppData%\\Microsoft\\Windows\\Themes\\. "
-            "This may not take effect until you lock and unlock (Win+L).\n\n"
-            "• HIGH-DPI / 4K: Windows automatically scales the lock screen "
-            "image to fit your display. A 4K image on a 1080p laptop will "
-            "look fine (downscaled). A 720p image on a 4K monitor will "
-            "appear soft or pixellated.\n\n"
-            "── IMAGE SIZE AND QUALITY ───────────────────────────────\n\n"
-            "The preview info bar shows image resolution vs screen resolution "
-            "and a quality rating:\n"
-            "  ✔ native or better  — image is at least as large as your screen\n"
-            "  ≈ slight upscale    — image is 75–100%% of screen size (barely visible)\n"
-            "  ⚠ upscaled 2×      — image is 50–75%% of screen (slightly soft)\n"
-            "  ⚠⚠ heavily upscaled — image is under 50%% of screen (noticeably blurry)\n\n"
-            "For best results on any display, use images at or above your "
-            "screen's native resolution. Common targets: 1920×1080 (1080p), "
-            "2560×1440 (1440p), 3840×2160 (4K). A 720p or 1080p image on a "
-            "4K monitor will be upscaled 2–4× and may look soft."
+
+            "Set your lock screen image from the same app. If Windows "
+            "Spotlight is running (the daily rotating Microsoft images), "
+            "QiGor quietly turns it off and sets your image instead. You can "
+            "release control at any time to let Windows manage it again.\n\n"
+
+            "── FAVOURITES & GALLERIES ───────────────────────────────\n\n"
+
+            "Save your favourite image folders and gallery websites for "
+            "quick access. Double-click a folder to browse images inside it "
+            "with a full thumbnail picker. Double-click a URL to open it in "
+            "your browser. The lucid24.org gallery links are included by "
+            "default — hundreds of free high-resolution wallpapers.\n\n"
+
+            "── TECHNICAL NOTES ──────────────────────────────────────\n\n"
+
+            "• Display styles: Fill (crop to fit), Fit (letterbox), Stretch, "
+            "Tile, Center, Span (multi-monitor).\n\n"
+
+            "• The preview info bar shows your image resolution vs your "
+            "screen's native resolution and a quality rating:\n"
+            "  ✔ native or better  — sharp at any size\n"
+            "  ≈ slight upscale    — 75–100%% of screen (barely noticeable)\n"
+            "  ⚠ upscaled ~2×     — 50–75%% of screen (slightly soft)\n"
+            "  ⚠⚠ heavily upscaled — under 50%% of screen (visibly blurry)\n\n"
+
+            "• Lock screen uses the Windows PersonalizationCSP registry key "
+            "(available since Windows 10 version 1607). Requires a one-time "
+            "UAC elevation via a small helper script that exits immediately. "
+            "Does not work on enterprise-managed PCs where Group Policy or "
+            "MDM (Intune/SCCM) locks the lock screen.\n\n"
+
+            "• Images are stored in: %USERPROFILE%\\.qigor-wallpaper\\saved_wallpapers\\\n\n"
+
+            "• Slideshow and reminder tasks are visible in Windows Task "
+            "Scheduler under the names QiGorWallpaperSlideshow and "
+            "QiGorWallpaperReminder."
         )
         txt = scrolledtext.ScrolledText(body, font=fn, wrap=tk.WORD,
                                         bg=t["entry_bg"], fg=t["fg"],
