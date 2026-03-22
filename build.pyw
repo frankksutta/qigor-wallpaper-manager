@@ -924,9 +924,11 @@ class App:
 
     def _do_git_setup(self):
         self._section("GIT SETUP")
-        token = self._token_var.get().strip()
+        token    = self._token_var.get().strip()
+        repo_url = "https://github.com/{}/{}".format(GITHUB_USER, GITHUB_REPO)
+        git_dir  = SCRIPT_DIR / ".git"
 
-        # Create GitHub repo via API
+        # Create GitHub repo via API if needed
         if token:
             def gh_log(msg, tag="info"):
                 self.root.after(0, lambda m=msg, t=tag: self._log(m, t))
@@ -935,26 +937,33 @@ class App:
         else:
             self._log("⚠   No token — skipping remote repo creation.", "warning")
 
-        git_dir = SCRIPT_DIR / ".git"
         if git_dir.exists():
-            self._log("Git repo already exists.", "warning")
-            self._log("Use '2 – Commit' to stage and commit changes.", "info")
+            self._log("Git repo already exists.", "info")
+            # Always verify/fix the remote — this is the most common issue
+            existing, _ = self._git_out("remote", "get-url", "origin")
+            if existing:
+                if existing.strip() != repo_url:
+                    self._log("Updating remote URL to: {}".format(repo_url), "info")
+                    self._git("remote", "set-url", "origin", repo_url)
+                else:
+                    self._log("✅  Remote origin already correct.", "success")
+            else:
+                self._log("Adding remote: {}".format(repo_url), "info")
+                self._git("remote", "add", "origin", repo_url)
+            branch, _ = self._git_out("rev-parse", "--abbrev-ref", "HEAD")
+            self._log("✅  Ready. Branch: {}  →  click '3 – Push'.".format(
+                branch or "master"), "success")
             return
 
-        # Create .gitignore
+        # Fresh init
         gi = SCRIPT_DIR / ".gitignore"
         if not gi.exists():
             gi.write_text(
-                "# Build artifacts\n"
-                "build/\ndist/\n*.spec\n\n"
-                "# Generated EXE\n"
-                "*.exe\n\n"
-                "# Python cache\n"
-                "*.pyc\n__pycache__/\n\n"
-                "# Config (contains GitHub token)\n"
-                "_slideshow_debug.txt\n"
-                "_wallpaper_slideshow.py\n"
-                "_wallpaper_remind.py\n"
+                "# Build artifacts\nbuild/\ndist/\n*.spec\n\n"
+                "# Generated EXE\n*.exe\n\n"
+                "# Python cache\n*.pyc\n__pycache__/\n\n"
+                "# Scratch files\n_slideshow_debug.txt\n"
+                "_wallpaper_slideshow.py\n_wallpaper_remind.py\n"
                 "_lockscreen_helper.py\n",
                 encoding="utf-8")
             self._log("Created .gitignore", "info")
@@ -964,19 +973,16 @@ class App:
         rc = self._git("commit", "-m",
                        "Initial commit — QiGor Wallpaper Manager v0.7")
         if rc != 0:
-            self._log("Commit failed — set git identity:", "error")
+            self._log("Commit failed — set git user.name / user.email first:", "error")
             self._log("  git config --global user.name 'Your Name'", "warning")
             self._log("  git config --global user.email 'you@example.com'", "warning")
             return
 
-        repo_url = "https://github.com/{}/{}".format(GITHUB_USER, GITHUB_REPO)
         self._git("remote", "add", "origin", repo_url)
         branch, _ = self._git_out("rev-parse", "--abbrev-ref", "HEAD")
-        if not branch:
-            branch = "master"
         self._log("", "info")
-        self._log("✅  Setup complete!  (branch: {})".format(branch), "success")
-        self._log("Click '3 – Push' to publish to GitHub.", "info")
+        self._log("✅  Setup complete!  Branch: {}".format(branch or "master"), "success")
+        self._log("Click '3 – Push' to publish.", "info")
 
     def _do_git_commit(self):
         self._section("GIT COMMIT")
