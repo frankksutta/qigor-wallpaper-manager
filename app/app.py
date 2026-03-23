@@ -23,6 +23,7 @@ from .tooltip import Tooltip
 from .dialogs import AboutDialog, ErrorDialog, _InputDialog, _RenameDialog
 from .reminder import _ReminderDialog
 from .slideshow import SlideshowDialog, is_scheduled as slideshow_is_scheduled
+from .desktop_preview import start_preview
 
 
 def _get_exe_dir() -> Path:
@@ -995,6 +996,11 @@ class App:
             os.startfile(str(STORE_DIR))
 
     # ── Reminder ──────────────────────────────────────────────────────────────
+
+    def _preview_desktop(self):
+        """Minimize all windows, show countdown overlay, restore on timer/click."""
+        hwnd = int(self.root.wm_frame(), 16)
+        start_preview(self.root, hwnd)
 
     def _show_slideshow_dialog(self):
         dialog = SlideshowDialog(self.root, self.cfg, self.theme_name, self.font_size,

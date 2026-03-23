@@ -116,6 +116,16 @@ def build_ui(app):
     clr_btn.pack(side=tk.RIGHT)
     Tooltip(clr_btn, "Clear the log console.  Ctrl+L")
 
+    prev_desk_btn = tk.Button(toolbar, text="👁 Preview Desktop",
+              command=app._preview_desktop)
+    prev_desk_btn.pack(side=tk.RIGHT, padx=(0, 4))
+    Tooltip(prev_desk_btn,
+            "Minimize all windows so you can see the desktop wallpaper clearly.\n\n"
+            "Your window layout is saved and restored exactly — immune to\n"
+            "accidental clicks or keypresses corrupting the state.\n\n"
+            "A countdown overlay lets you take your time. Click\n"
+            "'Restore Now' or wait for the timer to get everything back.")
+
     about_btn = tk.Button(toolbar, text="About", command=app._show_about)
     about_btn.pack(side=tk.RIGHT, padx=(4, 0))
     Tooltip(about_btn, f"About {APP_NAME}  (F1)")
