@@ -19,7 +19,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from pathlib import Path
 
-from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR, WALLPAPER_STYLES, HELPERS_DIR
+from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR, WALLPAPER_STYLES, HELPERS_DIR, APP_BUILD
 from .wallpaper import find_python_exe
 
 TASK_NAME  = "QiGorWallpaperSlideshow"
@@ -236,38 +236,132 @@ def write_slideshow_helper() -> Path:
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
+def _run_next_headless():
+    """
+    Headless slideshow advance — called via  exe --next  by Task Scheduler.
+    No Python installation required on the target machine.
+    Runs entirely within the frozen EXE process.
+    """
+    import random, ctypes, winreg, datetime as _dt
+    from pathlib import Path as _P
+
+    log_file = HELPERS_DIR / "_slideshow_log.txt"
+    HELPERS_DIR.mkdir(parents=True, exist_ok=True)
+
+    def log(msg):
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "  " + str(msg) + "\n")
+
+    log("Slideshow --next started.")
+    state = load_state()
+    if not state:
+        log("ERROR: no state file."); return
+
+    folder  = _P(state.get("folder", ""))
+    style   = state.get("style", "Fill")
+    shuffle = state.get("shuffle", True)
+
+    if not folder.exists():
+        log("ERROR: folder not found: " + str(folder)); return
+
+    images = get_images_in_folder(folder)
+    if not images:
+        log("ERROR: no images in " + str(folder)); return
+
+    queue = state.get("queue", [])
+    index = state.get("queue_index", 0)
+
+    if not queue or index >= len(queue) or set(images) != set(queue):
+        log("Rebuilding queue ({} images)".format(len(images)))
+        queue = list(images)
+        if shuffle:
+            random.shuffle(queue)
+        index = 0
+
+    chosen = None
+    for _ in range(len(queue)):
+        candidate = queue[index % len(queue)]
+        full_path = folder / candidate
+        index = (index + 1) % len(queue)
+        if full_path.exists():
+            chosen = full_path
+            break
+        log("Skipping missing: " + candidate)
+
+    if not chosen:
+        log("ERROR: all files missing."); return
+
+    # Apply wallpaper via registry + ctypes
+    styles = {
+        "Fill": ("10","0"), "Fit": ("6","0"), "Stretch": ("2","0"),
+        "Tile": ("0","1"),  "Center": ("0","0"), "Span": ("22","0"),
+    }
+    sv, tv = styles.get(style, ("10","0"))
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                             r"Control Panel\Desktop", 0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "WallpaperStyle", 0, winreg.REG_SZ, sv)
+        winreg.SetValueEx(key, "TileWallpaper",  0, winreg.REG_SZ, tv)
+        winreg.CloseKey(key)
+    except Exception as e:
+        log("Registry error: " + str(e))
+    ctypes.windll.user32.SystemParametersInfoW(20, 0, str(chosen), 3)
+
+    state["queue"]       = queue
+    state["queue_index"] = index
+    state["last_set"]    = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    state["last_file"]   = chosen.name
+    save_state(state)
+    log("Done: " + chosen.name + " (" + str(index) + "/" + str(len(queue)) + ")")
+
+
 def schedule_task(interval_min: int):
     """
-    Schedule the slideshow helper via schtasks MINUTE trigger.
+    Schedule  exe --next  via schtasks MINUTE trigger.
+    No external Python needed — the EXE is its own slideshow runner.
     Returns (success: bool, message: str).
     """
     try:
-        helper = write_slideshow_helper()
+        if getattr(sys, "frozen", False):
+            # Frozen EXE: schedule itself with --next flag
+            tr = '"{}" --next'.format(sys.executable)
+            runner_desc = sys.executable
+        else:
+            # Script mode: use pythonw + pyw
+            from .wallpaper import find_python_exe
+            py  = find_python_exe()
+            pyw = str(Path(sys.argv[0]).resolve())
+            tr  = '"{}" "{}" --next'.format(py, pyw)
+            runner_desc = pyw
 
-        pythonw  = find_python_exe()
         username = os.environ.get("USERNAME", "")
-
         import datetime as _dt
         start_time = (_dt.datetime.now() +
                       _dt.timedelta(minutes=1)).strftime("%H:%M")
 
-        tr = '"{}" "{}"'.format(pythonw, helper)
+        # schtasks /sc MINUTE caps /mo at 1439 — use DAILY/HOURLY for longer intervals
+        if interval_min >= 1440:
+            days = interval_min // 1440
+            sc_args = ["/sc", "DAILY", "/mo", str(days), "/st", start_time]
+        elif interval_min >= 60:
+            hours = interval_min // 60
+            sc_args = ["/sc", "HOURLY", "/mo", str(hours), "/st", start_time]
+        else:
+            sc_args = ["/sc", "MINUTE", "/mo", str(interval_min), "/st", start_time]
 
         cmd = [
             "schtasks", "/create", "/f",
             "/tn", TASK_NAME,
             "/tr", tr,
-            "/sc", "MINUTE",
-            "/mo", str(interval_min),
-            "/st", start_time,
+        ] + sc_args + [
             "/it",
             "/ru", username,
         ]
 
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode == 0:
-            return True, "Scheduled every {} min.\nHelper: {}".format(
-                interval_min, helper)
+            return True, "Scheduled every {} min.\nRunner: {}".format(
+                interval_min, runner_desc)
         err = (r.stderr or r.stdout or "unknown error").strip()
         return False, "schtasks failed (code {}):\n{}\n\nCommand:\n{}".format(
             r.returncode, err, " ".join(cmd))
@@ -472,8 +566,9 @@ class SlideshowDialog(tk.Toplevel):
         self._save_state_from_ui()
         py_path = find_python_exe()
         ok, msg = schedule_task(self._get_interval_min())
-        diag = "Python: {}\nHelpers dir: {}\nFrozen: {}".format(
-            py_path, HELPERS_DIR, getattr(__import__('sys'), 'frozen', False))
+        diag = "Build: {}\nPython: {}\nHelpers dir: {}\nFrozen: {}".format(
+            APP_BUILD, py_path, HELPERS_DIR,
+            getattr(__import__('sys'), 'frozen', False))
 
         t = THEMES.get(self._cfg.get("theme"), THEMES["dark"])
         rw = tk.Toplevel(self)
@@ -518,18 +613,8 @@ class SlideshowDialog(tk.Toplevel):
                 "No image files found in:\n{}".format(folder), parent=self)
             return
         self._save_state_from_ui()
-        helper  = write_slideshow_helper()
-        pythonw = find_python_exe()
         try:
-            proc = subprocess.Popen(
-                [pythonw, str(helper)],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE)
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+            _run_next_headless()
             self.result = "next"
             self.destroy()
         except Exception as e:

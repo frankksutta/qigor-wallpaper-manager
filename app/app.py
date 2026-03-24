@@ -16,7 +16,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
-from .constants import (APP_NAME, APP_VERSION, STORE_DIR, HELPERS_DIR,
+from .constants import (APP_NAME, APP_VERSION, APP_BUILD, STORE_DIR, HELPERS_DIR,
                         THEMES, BTN_COLORS, CONSOLE_COLORS, WIN_IMAGE_SOURCES)
 from .config import Config
 from .tooltip import Tooltip
@@ -51,7 +51,7 @@ class App:
 
     def __init__(self, root: tk.Tk):
         self.root       = root
-        self.root.title(f"{APP_NAME}  v{APP_VERSION}")
+        self.root.title(f"{APP_NAME}  v{APP_VERSION}  build {APP_BUILD}")
         self.cfg        = Config()
         self.root.geometry(self.cfg.get("window_geometry"))
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)

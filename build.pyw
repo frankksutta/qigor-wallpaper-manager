@@ -579,12 +579,13 @@ class App:
         else:
             self._log("⚠   assets/ directory not found — images won't be bundled", "warning")
 
-        # Icon
-        if ICON_FILE.exists():
+        # Icon — lives in assets/, gets copied to root during build
+        assets_ico = SCRIPT_DIR / "assets" / "qigor_wallpaper_manager.ico"
+        if assets_ico.exists():
             self._log("✅  Icon: {}  ({} KB)".format(
-                ICON_FILE.name, ICON_FILE.stat().st_size // 1024), "success")
+                assets_ico.name, assets_ico.stat().st_size // 1024), "success")
         else:
-            self._log("⚠   Icon not found — click '🖼 Regenerate Icon' to create it", "warning")
+            self._log("⚠   Icon not found in assets/ — click '🖼 Regenerate Icon' to create it", "warning")
 
         # Existing EXE
         if EXE_PATH.exists():
