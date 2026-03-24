@@ -35,21 +35,23 @@ def find_python_exe() -> str:
     python.exe. We must find the real Python installation separately.
 
     Strategy (frozen only):
-      1. PATH lookup
+      1. PATH lookup (skipping Windows Store stub)
       2. Windows registry (PythonCore)
       3. Fallback to "python.exe"
     Script mode: sys.executable is always correct.
     """
+    def _is_store_stub(path: str) -> bool:
+        return "WindowsApps" in path
+
     if not getattr(sys, "frozen", False):
         py = Path(sys.executable)
         pw = py.parent / "pythonw.exe"
         return str(pw) if pw.exists() else str(py)
 
-    # Frozen — find real Python
     import shutil as _sh
     for name in ("pythonw.exe", "python.exe"):
         found = _sh.which(name)
-        if found:
+        if found and not _is_store_stub(found):
             return found
 
     try:
@@ -71,7 +73,7 @@ def find_python_exe() -> str:
                                     ipath, _ = _wr.QueryValueEx(ik, "")
                                     for name in ("pythonw.exe", "python.exe"):
                                         c = Path(ipath) / name
-                                        if c.exists():
+                                        if c.exists() and not _is_store_stub(str(c)):
                                             return str(c)
                             except OSError:
                                 continue
