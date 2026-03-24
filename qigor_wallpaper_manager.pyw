@@ -73,6 +73,37 @@ try:
 except Exception:
     root = tk.Tk()
 
+# ── Set gorilla icon for taskbar + window title bar ───────────────────────────
+def _set_window_icon(root):
+    import sys
+    from pathlib import Path
+    import ctypes
+
+    # Tell Windows taskbar this is OUR app, not pythonw.exe
+    # This makes the taskbar use the EXE's embedded icon
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "frankksutta.qigor.wallpaper.1")
+    except Exception:
+        pass
+
+    # Locate assets/ — MEIPASS when frozen, next to .pyw in script mode
+    if getattr(sys, 'frozen', False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).resolve().parent
+
+    png = base / 'assets' / 'qigor_wallpaper_manager_icon.png'
+    try:
+        if png.exists():
+            img = tk.PhotoImage(file=str(png))
+            root.iconphoto(True, img)
+            root._icon_ref = img  # prevent garbage collection
+    except Exception:
+        pass
+
+_set_window_icon(root)
+
 from app.app import App
 App(root)
 root.mainloop()
