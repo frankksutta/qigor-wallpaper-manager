@@ -248,12 +248,12 @@ def build_ui(app):
             "When checked: copies the image into the wallpaper store folder.\n"
             f"Store: {STORE_DIR}")
 
-    # ── Action buttons ────────────────────────────────────────────────────────
-    btn_row = tk.Frame(left)
-    btn_row.pack(fill=tk.X, pady=(0, 2))
+    # ── Action row 1: Set Wallpaper | ⚙ Wall ────────────────────────────────
+    btn_row1 = tk.Frame(left)
+    btn_row1.pack(fill=tk.X, pady=(0, 2))
 
     c = BTN_COLORS["success"]
-    app.apply_btn = tk.Button(btn_row, text="🖼  Set Wallpaper", height=2,
+    app.apply_btn = tk.Button(btn_row1, text="🖼  Set Wallpaper", height=2,
         bg=c["bg"], fg=c["fg"], activebackground=c["active"],
         command=app._start_task)
     app.apply_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
@@ -261,35 +261,22 @@ def build_ui(app):
             "Apply the image as your desktop wallpaper.\n"
             "If a URL is entered, the image will be downloaded first.\nCtrl+R")
 
-    c = BTN_COLORS["cancel"]
-    app.cancel_btn = tk.Button(btn_row, text="✖  Cancel", height=2,
-        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-        command=app._cancel_task, state=tk.DISABLED)
-    app.cancel_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
-    Tooltip(app.cancel_btn, "Cancel a download in progress.  Esc")
-
-    pers_bg_row = tk.Frame(left)
-    pers_bg_row.pack(fill=tk.X, pady=(0, 4))
     c = BTN_COLORS["primary"]
-    pers_bg_btn = tk.Button(pers_bg_row, text="⚙  Personalize Background",
-        font=("Segoe UI", 8),
+    pers_bg_btn = tk.Button(btn_row1, text="⚙ Wall", height=2,
         bg=c["bg"], fg=c["fg"], activebackground=c["active"],
         command=lambda: __import__("os").startfile(
             "ms-settings:personalization-background"))
-    pers_bg_btn.pack(side=tk.LEFT)
+    pers_bg_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
     Tooltip(pers_bg_btn,
             "Open Windows Settings → Personalization → Background.\n"
             "Set desktop background to Picture, Slideshow, or Spotlight.")
 
-    # ── Lock screen ───────────────────────────────────────────────────────────
-    lock_frame = tk.LabelFrame(left, text="  Lock Screen  ")
-    lock_frame.pack(fill=tk.X, pady=(0, 6))
-
-    lock_row = tk.Frame(lock_frame)
-    lock_row.pack(fill=tk.X, padx=6, pady=(6, 4))
+    # ── Action row 2: Set Lock Screen | ⚙ Lock ───────────────────────────────
+    btn_row2 = tk.Frame(left)
+    btn_row2.pack(fill=tk.X, pady=(0, 2))
 
     c = BTN_COLORS["warning"]
-    app.lock_btn = tk.Button(lock_row, text="🔒  Set Lock Screen", height=2,
+    app.lock_btn = tk.Button(btn_row2, text="🔒  Set Lock Screen", height=2,
         bg=c["bg"], fg=c["fg"], activebackground=c["active"],
         command=app._set_lock_screen)
     app.lock_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
@@ -298,21 +285,42 @@ def build_ui(app):
             "A Windows permission (UAC) prompt will appear briefly.\n"
             "The app stays open — a small helper runs the change and exits.")
 
-    cur_ls_btn = tk.Button(lock_row, text="🖥  Current", height=2,
-        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-        command=app._show_current_lock_screen)
-    cur_ls_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
-    Tooltip(cur_ls_btn, "Preview the image currently set as your lock screen.")
-
-    ls_pers_row = tk.Frame(lock_frame)
-    ls_pers_row.pack(fill=tk.X, padx=6, pady=(0, 6))
-
     c = BTN_COLORS["primary"]
-    app._ls_pers_btn = tk.Button(ls_pers_row, text="⚙  Personalize Lock Screen",
-        font=("Segoe UI", 8),
+    app._ls_pers_btn = tk.Button(btn_row2, text="⚙ Lock", height=2,
         bg=c["bg"], fg=c["fg"], activebackground=c["active"],
         command=app._ls_personalize_or_release)
-    app._ls_pers_btn.pack(side=tk.LEFT)
+    app._ls_pers_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    Tooltip(app._ls_pers_btn,
+            "Open Settings → Personalization → Lock screen.\n"
+            "If a custom image policy is active, releases it first (UAC prompt)\n"
+            "then opens Settings so you can change the lock screen mode.")
+
+    # ── Action row 3: Show Desktop | Cancel D-load ───────────────────────────
+    btn_row3 = tk.Frame(left)
+    btn_row3.pack(fill=tk.X, pady=(0, 6))
+
+    c = BTN_COLORS["primary"]
+    show_desk_btn = tk.Button(btn_row3, text="👁  Show Desktop", height=2,
+        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+        command=app._preview_desktop)
+    show_desk_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+    Tooltip(show_desk_btn,
+            "Minimize all windows so you can see the actual desktop wallpaper.\n\n"
+            "Window layout is saved and restored exactly — immune to accidental\n"
+            "clicks corrupting the state unlike Win+D.\n\n"
+            "A countdown overlay auto-restores everything after 10 seconds.\n"
+            "Click \'Restore Now\' or \'+10s\' to control the timer.\n\n"
+            "Other ways to show desktop:\n"
+            "  Win+D         — toggle (flaky if you click anything)\n"
+            "  Win+M         — minimize all  (Win+Shift+M to restore)\n"
+            "  Click taskbar bottom-right corner — toggle")
+
+    c = BTN_COLORS["cancel"]
+    app.cancel_btn = tk.Button(btn_row3, text="✖  Cancel D-load", height=2,
+        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+        command=app._cancel_task, state=tk.DISABLED)
+    app.cancel_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    Tooltip(app.cancel_btn, "Cancel an image download in progress.  Esc")
 
     # ── Last changed banner ───────────────────────────────────────────────────
     app._last_changed_var = tk.StringVar(value="")
@@ -387,10 +395,18 @@ def build_ui(app):
     cur_wp_btn = tk.Button(btn_row_prev, text="🖥  Current Wallpaper",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
               font=("Segoe UI", 9), command=app._show_current_wallpaper)
-    cur_wp_btn.pack(side=tk.LEFT)
+    cur_wp_btn.pack(side=tk.LEFT, padx=(0, 4))
     Tooltip(cur_wp_btn,
             "Preview the wallpaper currently set on your desktop.\n"
             "Reads the path directly from the Windows registry.")
+
+    cur_ls_prev_btn = tk.Button(btn_row_prev, text="🖥  Current Lock Screen",
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              font=("Segoe UI", 9), command=app._show_current_lock_screen)
+    cur_ls_prev_btn.pack(side=tk.LEFT)
+    Tooltip(cur_ls_prev_btn, "Preview the image currently set as your lock screen.")
+
+
 
     # ── Favorites ─────────────────────────────────────────────────────────────
     fav_frame = tk.LabelFrame(right, text="  Saved Locations & Galleries  ")
