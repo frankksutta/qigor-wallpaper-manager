@@ -15,6 +15,7 @@ import os
 import random
 import subprocess
 import sys
+import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from pathlib import Path
@@ -253,11 +254,13 @@ def write_slideshow_helper() -> Path:
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
-def _run_next_headless():
+def _run_next_headless(force: bool = False):
     """
     Headless slideshow advance — called via  exe --next  by Task Scheduler.
     No Python installation required on the target machine.
     Runs entirely within the frozen EXE process.
+
+    force=True bypasses the elapsed-time guard (used by the "Next Now" button).
     """
     import random, ctypes, winreg, datetime as _dt
     from pathlib import Path as _P
@@ -277,9 +280,10 @@ def _run_next_headless():
     # Guard: skip if we last rotated less than 90% of the interval ago.
     # Prevents the ONLOGON catch-up task from firing when the user simply
     # locks and immediately unlocks (sleep/screen-saver wake-up etc.).
+    # force=True bypasses this (used by the "Next Now" button).
     interval_min = state.get("interval_min", 10)
     last_set_str = state.get("last_set", "")
-    if last_set_str:
+    if not force and last_set_str:
         try:
             last_set = _dt.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")
             elapsed_min = (_dt.datetime.now() - last_set).total_seconds() / 60
@@ -488,12 +492,27 @@ class SlideshowDialog(tk.Toplevel):
                       "using Windows Task Scheduler. No background process.").pack(
                           anchor=tk.W, pady=(2, 8))
 
-        sc = (CONSOLE_COLORS[theme_name]["green"] if is_scheduled()
-              else CONSOLE_COLORS[theme_name]["yellow"])
-        self._status_var = tk.StringVar(value=query_task_status())
-        tk.Label(body, textvariable=self._status_var, font=fns,
-                 bg=t["bg"], fg=sc,
-                 wraplength=460, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 6))
+        # Status label — populated immediately with a placeholder, then updated
+        # from a background thread so the dialog opens instantly (schtasks /query
+        # can block the main thread for several seconds).
+        self._status_var = tk.StringVar(value="Checking scheduler status…")
+        self._status_label = tk.Label(body, textvariable=self._status_var, font=fns,
+                 bg=t["bg"], fg=CONSOLE_COLORS[theme_name]["yellow"],
+                 wraplength=460, justify=tk.LEFT)
+        self._status_label.pack(anchor=tk.W, pady=(0, 6))
+        self._theme_name = theme_name
+
+        def _fetch_status():
+            scheduled = is_scheduled()
+            status    = query_task_status()
+            color = (CONSOLE_COLORS[theme_name]["green"] if scheduled
+                     else CONSOLE_COLORS[theme_name]["yellow"])
+            if self.winfo_exists():
+                self.after(0, lambda: (
+                    self._status_var.set(status),
+                    self._status_label.config(fg=color),
+                ))
+        threading.Thread(target=_fetch_status, daemon=True).start()
 
         if state.get("last_file"):
             tk.Label(body,
@@ -659,7 +678,7 @@ class SlideshowDialog(tk.Toplevel):
             return
         self._save_state_from_ui()
         try:
-            _run_next_headless()
+            _run_next_headless(force=True)
             self.result = "next"
             self.destroy()
         except Exception as e:
