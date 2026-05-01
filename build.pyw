@@ -39,7 +39,7 @@ APP_VERSION = "1.0"
 
 SCRIPT_DIR   = Path(__file__).parent.resolve()
 ENTRY_PY     = SCRIPT_DIR / "qigor_wallpaper_manager.pyw"
-ICON_FILE    = SCRIPT_DIR / "qigor_wallpaper_manager.ico"
+ICON_FILE    = SCRIPT_DIR / "assets" / "qigor_wallpaper_manager.ico"
 EXE_NAME     = "QiGor_Wallpaper_Manager.exe"
 EXE_PATH     = SCRIPT_DIR / EXE_NAME
 BUILD_DIR    = SCRIPT_DIR / "build"
@@ -164,10 +164,6 @@ BTNS = {
     "clean":   dict(bg="#7a1c1c", fg="#fff", abg="#9e2020", text="🧹  Clean",
                     tip="Remove PyInstaller build artifacts: build/, dist/, *.spec\n"
                         "Safe to run any time. Does not delete the .exe output."),
-    "gen_ico": dict(bg="#7a5c00", fg="#fff", abg="#9a7400", text="🖼  Regenerate Icon",
-                    tip="Crop the gorilla from the banner image and generate\n"
-                        "a multi-size .ico file (16/32/48/64/128/256px).\n"
-                        "Saved to assets/qigor_wallpaper_manager.ico"),
 }
 
 
@@ -393,7 +389,6 @@ class App:
         for key, cmd in [
             ("build",   self._start_build),
             ("github",  self._start_github),
-            ("gen_ico", self._regen_icon),
             ("clean",   self._clean),
         ]:
             b = BTNS[key]
@@ -579,13 +574,12 @@ class App:
         else:
             self._log("⚠   assets/ directory not found — images won't be bundled", "warning")
 
-        # Icon — lives in assets/, gets copied to root during build
-        assets_ico = SCRIPT_DIR / "assets" / "qigor_wallpaper_manager.ico"
-        if assets_ico.exists():
+        # Icon — lives in assets/, regenerated automatically at build time
+        if ICON_FILE.exists():
             self._log("✅  Icon: {}  ({} KB)".format(
-                assets_ico.name, assets_ico.stat().st_size // 1024), "success")
+                ICON_FILE.name, ICON_FILE.stat().st_size // 1024), "success")
         else:
-            self._log("⚠   Icon not found in assets/ — click '🖼 Regenerate Icon' to create it", "warning")
+            self._log("ℹ   Icon not found in assets/ — will be generated at build time", "info")
 
         # Existing EXE
         if EXE_PATH.exists():
@@ -632,19 +626,20 @@ class App:
     # ── Icon generation ───────────────────────────────────────────────────────
 
     def _regen_icon(self):
-        """Generate .ico from the bundled assets/qigor_wallpaper_manager_150k.jpg."""
-        self._section("GENERATE ICON")
+        """Generate assets/qigor_wallpaper_manager.ico from the bundled source JPG.
+        Called automatically at the start of every build. Takes ~0.1s."""
         try:
             from PIL import Image
         except ImportError:
-            self._log("❌  Pillow not installed — pip install pillow", "error")
-            return
+            self._log("⚠   Pillow not installed — skipping icon generation (pip install pillow)", "warning")
+            return False
 
         src = SCRIPT_DIR / "assets" / "qigor_wallpaper_manager_150k.jpg"
         if not src.exists():
-            self._log("❌  Source image not found: {}".format(src), "error")
-            return
+            self._log("⚠   Icon source image not found: {}".format(src), "warning")
+            return False
 
+        import io, struct
         img = Image.open(str(src))
         # Crop gorilla face area
         cx, cy, half = 490, 160, 220
@@ -653,10 +648,7 @@ class App:
         cy = min(cy, h - half)
         crop = img.crop((cx - half, cy - half, cx + half, cy + half))
 
-        # Build multi-size ICO
         sizes = [256, 128, 64, 48, 32, 16]
-        import io, struct
-
         entries = []
         for s in sizes:
             resized = crop.resize((s, s), Image.LANCZOS).convert("RGBA")
@@ -681,11 +673,10 @@ class App:
             for _, data in entries:
                 f.write(data)
 
-        self._log("✅  Icon created: {}  ({} KB)".format(
+        self._log("✅  Icon: {}  ({} KB)".format(
             ICON_FILE.name, ICON_FILE.stat().st_size // 1024), "success")
-        self._log("   Sizes: {}".format(", ".join("{}×{}".format(s, s)
-                                                   for s, _ in entries)), "info")
         self._info["icon"].config(text=str(ICON_FILE))
+        return True
 
     # ── Build EXE ─────────────────────────────────────────────────────────────
 
@@ -700,13 +691,8 @@ class App:
         t0 = time.monotonic()
         self._section("BUILD EXE")
 
-        # ── Command ───────────────────────────────────────────────────────────
-        # Copy icon to root dir for PyInstaller (it needs it relative to spec)
-        root_ico = SCRIPT_DIR / "qigor_wallpaper_manager.ico"
-        if ICON_FILE.exists() and not root_ico.exists():
-            import shutil as _sh
-            _sh.copy2(str(ICON_FILE), str(root_ico))
-        effective_icon = root_ico if root_ico.exists() else ICON_FILE
+        # ── Icon — regenerate from source JPG into assets/ (fast, ~0.1s) ──────
+        self._regen_icon()  # always fresh; writes to assets/qigor_wallpaper_manager.ico
 
         cmd = [
             sys.executable, "-m", "PyInstaller",
@@ -726,9 +712,9 @@ class App:
             "--collect-all", "tkinterdnd2",
         ]
 
-        if effective_icon.exists():
-            cmd += ["--icon", str(effective_icon)]
-            self._log("Icon: {}".format(effective_icon.name), "info")
+        if ICON_FILE.exists():
+            cmd += ["--icon", str(ICON_FILE)]
+            self._log("Icon: {}".format(ICON_FILE.name), "info")
         else:
             self._log("⚠   No icon — building without", "warning")
 
@@ -815,8 +801,7 @@ class App:
         self._log("📁  {}".format(EXE_PATH), "path")
 
         # ── Clean build artifacts ──────────────────────────────────────────────
-        for p in [BUILD_DIR, DIST_DIR, SPEC_FILE, ver_file,
-                  SCRIPT_DIR / "qigor_wallpaper_manager.ico"]:
+        for p in [BUILD_DIR, DIST_DIR, SPEC_FILE, ver_file]:
             pp = Path(p)
             if pp.exists():
                 if pp.is_dir():

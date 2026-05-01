@@ -1,0 +1,3 @@
+windows wallper app icon
+
+Yes — assets/qigor_wallpaper_manager_150k.jpg is the source. The regen code opens that file, crops a 440×440 region centered around coordinates (490, 160) which is where the gorilla face sits in that particular image, then downsizes to the ICO sizes. If you swap in a different JPG at that path, you'd also need to adjust those crop coordinates in _regen_icon to point at the right spot in the new image. The PNG files in assets are just UI thumbnails used elsewhere in the app — they don't feed into the ICO at all.
