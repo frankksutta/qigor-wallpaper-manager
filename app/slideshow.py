@@ -100,6 +100,10 @@ def remove_task() -> bool:
         r = subprocess.run(
             ["schtasks", "/delete", "/f", "/tn", TASK_NAME],
             capture_output=True, text=True)
+        # Also remove the on-logon catch-up task (ignore failure if absent)
+        subprocess.run(
+            ["schtasks", "/delete", "/f", "/tn", TASK_NAME + "_OnLogon"],
+            capture_output=True, text=True)
         return r.returncode == 0
     except Exception:
         return False
@@ -181,6 +185,19 @@ def write_slideshow_helper() -> Path:
         '    if not state:',
         '        log("ERROR: no state file. Configure slideshow in QiGor app.")',
         '        return',
+        '    # Guard: skip if last rotation was less than 90% of the interval ago.',
+        '    interval_min = state.get("interval_min", 10)',
+        '    last_set_str = state.get("last_set", "")',
+        '    if last_set_str:',
+        '        try:',
+        '            last_set = datetime.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")',
+        '            elapsed_min = (datetime.datetime.now() - last_set).total_seconds() / 60',
+        '            if elapsed_min < interval_min * 0.9:',
+        '                log("Skipping: only {:.1f} min since last set (interval={}min).".format(',
+        '                    elapsed_min, interval_min))',
+        '                return',
+        '        except Exception:',
+        '            pass',
         '    folder  = Path(state.get("folder", ""))',
         '    style   = state.get("style", "Fill")',
         '    shuffle = state.get("shuffle", True)',
@@ -256,6 +273,22 @@ def _run_next_headless():
     state = load_state()
     if not state:
         log("ERROR: no state file."); return
+
+    # Guard: skip if we last rotated less than 90% of the interval ago.
+    # Prevents the ONLOGON catch-up task from firing when the user simply
+    # locks and immediately unlocks (sleep/screen-saver wake-up etc.).
+    interval_min = state.get("interval_min", 10)
+    last_set_str = state.get("last_set", "")
+    if last_set_str:
+        try:
+            last_set = _dt.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")
+            elapsed_min = (_dt.datetime.now() - last_set).total_seconds() / 60
+            if elapsed_min < interval_min * 0.9:
+                log("Skipping: only {:.1f} min since last set (interval={}min).".format(
+                    elapsed_min, interval_min))
+                return
+        except Exception:
+            pass  # malformed last_set — proceed normally
 
     folder  = _P(state.get("folder", ""))
     style   = state.get("style", "Fill")
@@ -360,6 +393,18 @@ def schedule_task(interval_min: int):
 
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode == 0:
+            # Also register an on-logon task so missed triggers are caught up
+            # when the user logs back in.  The helper itself guards against
+            # running too soon (elapsed < interval), so duplicate fires are safe.
+            cmd_logon = [
+                "schtasks", "/create", "/f",
+                "/tn", TASK_NAME + "_OnLogon",
+                "/tr", tr,
+                "/sc", "ONLOGON",
+                "/ru", username,
+                "/it",
+            ]
+            subprocess.run(cmd_logon, capture_output=True, text=True)
             return True, "Scheduled every {} min.\nRunner: {}".format(
                 interval_min, runner_desc)
         err = (r.stderr or r.stdout or "unknown error").strip()
