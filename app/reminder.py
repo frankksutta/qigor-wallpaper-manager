@@ -5,6 +5,7 @@ _ReminderDialog and Windows Task Scheduler integration.
 from __future__ import annotations
 import subprocess
 import sys
+import threading
 import time
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
@@ -95,11 +96,26 @@ class _ReminderDialog(tk.Toplevel):
                       "in Action Center — won't interrupt your work.").pack(
                           anchor=tk.W, pady=(2, 6))
 
-        task_status = self._query_task_status()
-        status_color = CONSOLE_COLORS[theme_name]["green"] if "Ready" in task_status \
-                       else CONSOLE_COLORS[theme_name]["yellow"]
-        tk.Label(body, text=task_status, font=fns, bg=t["bg"], fg=status_color,
-                 wraplength=440, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 8))
+        # Status label — show placeholder immediately, populate from background
+        # thread so the dialog opens instantly (schtasks /query can block for
+        # several seconds).
+        self._status_label_var = tk.StringVar(value="Checking scheduler status…")
+        self._status_label_widget = tk.Label(
+            body, textvariable=self._status_label_var, font=fns,
+            bg=t["bg"], fg=CONSOLE_COLORS[theme_name]["yellow"],
+            wraplength=440, justify=tk.LEFT)
+        self._status_label_widget.pack(anchor=tk.W, pady=(0, 8))
+
+        def _fetch_status():
+            status = self._query_task_status()
+            color = (CONSOLE_COLORS[theme_name]["green"] if "Ready" in status
+                     else CONSOLE_COLORS[theme_name]["yellow"])
+            if self.winfo_exists():
+                self.after(0, lambda: (
+                    self._status_label_var.set(status),
+                    self._status_label_widget.config(fg=color),
+                ))
+        threading.Thread(target=_fetch_status, daemon=True).start()
 
         freq_row = tk.Frame(body, bg=t["bg"])
         freq_row.pack(fill=tk.X, pady=(0, 8))
