@@ -101,7 +101,7 @@ def remove_task() -> bool:
         r = subprocess.run(
             ["schtasks", "/delete", "/f", "/tn", TASK_NAME],
             capture_output=True, text=True)
-        # Also remove the on-logon catch-up task (ignore failure if absent)
+        # Remove legacy on-logon catch-up task if present (ignore error if absent)
         subprocess.run(
             ["schtasks", "/delete", "/f", "/tn", TASK_NAME + "_OnLogon"],
             capture_output=True, text=True)
@@ -272,27 +272,35 @@ def _run_next_headless(force: bool = False):
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "  " + str(msg) + "\n")
 
-    log("Slideshow --next started.")
+    log("--- --next triggered. argv={} force={}".format(sys.argv[1:], force))
+
     state = load_state()
     if not state:
-        log("ERROR: no state file."); return
+        log("ERROR: no state file. Configure slideshow in the QiGor app."); return
 
-    # Guard: skip if we last rotated less than 90% of the interval ago.
-    # Prevents the ONLOGON catch-up task from firing when the user simply
-    # locks and immediately unlocks (sleep/screen-saver wake-up etc.).
-    # force=True bypasses this (used by the "Next Now" button).
     interval_min = state.get("interval_min", 10)
     last_set_str = state.get("last_set", "")
-    if not force and last_set_str:
-        try:
-            last_set = _dt.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")
-            elapsed_min = (_dt.datetime.now() - last_set).total_seconds() / 60
-            if elapsed_min < interval_min * 0.9:
-                log("Skipping: only {:.1f} min since last set (interval={}min).".format(
-                    elapsed_min, interval_min))
-                return
-        except Exception:
-            pass  # malformed last_set — proceed normally
+
+    # Guard: skip if last rotation was less than 90% of the interval ago.
+    # Prevents StartWhenAvailable catch-up from double-firing right after a
+    # normal on-time fire.  force=True bypasses (used by "Next Now" button).
+    if not force:
+        if last_set_str:
+            try:
+                last_set    = _dt.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")
+                elapsed_min = (_dt.datetime.now() - last_set).total_seconds() / 60
+                threshold   = interval_min * 0.9
+                log("Guard: elapsed={:.1f}min  threshold={:.1f}min (90% of {}min)  last_set={}".format(
+                    elapsed_min, threshold, interval_min, last_set_str))
+                if elapsed_min < threshold:
+                    log("Skipping: too soon.")
+                    return
+            except Exception as e:
+                log("Guard parse error (proceeding): {}".format(e))
+        else:
+            log("Guard: no last_set yet — proceeding.")
+    else:
+        log("Force=True, bypassing guard.")
 
     folder  = _P(state.get("folder", ""))
     style   = state.get("style", "Fill")
@@ -326,7 +334,7 @@ def _run_next_headless(force: bool = False):
         log("Skipping missing: " + candidate)
 
     if not chosen:
-        log("ERROR: all files missing."); return
+        log("ERROR: all files in queue are missing."); return
 
     # Apply wallpaper via registry + ctypes
     styles = {
@@ -349,68 +357,130 @@ def _run_next_headless(force: bool = False):
     state["last_set"]    = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     state["last_file"]   = chosen.name
     save_state(state)
-    log("Done: " + chosen.name + " (" + str(index) + "/" + str(len(queue)) + ")")
+    log("Done: {} ({}/{})".format(chosen.name, index, len(queue)))
+
+    # Query task status so the log shows when the next fire is scheduled
+    try:
+        r2 = subprocess.run(
+            ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST"],
+            capture_output=True, text=True, timeout=8)
+        if r2.returncode == 0:
+            lines = {}
+            for line in r2.stdout.splitlines():
+                if ":" in line:
+                    k, _, v = line.partition(":")
+                    lines[k.strip()] = v.strip()
+            log("Task: Status={}  NextRun={}  LastRun={}".format(
+                lines.get("Status", "?"),
+                lines.get("Next Run Time", "?"),
+                lines.get("Last Run Time", "?")))
+        else:
+            log("Task query: not found (task may have been removed).")
+    except Exception as e:
+        log("Task query failed: {}".format(e))
 
 
 def schedule_task(interval_min: int):
     """
-    Schedule  exe --next  via schtasks MINUTE trigger.
-    No external Python needed — the EXE is its own slideshow runner.
+    Schedule  exe --next  via Task Scheduler XML.
+    Uses StartWhenAvailable=true so a fire missed while the machine sleeps
+    runs as soon as the machine wakes — no separate OnLogon task needed.
     Returns (success: bool, message: str).
     """
+    import datetime as _dt
+    import xml.sax.saxutils as _sax
+
+    log_file = HELPERS_DIR / "_slideshow_log.txt"
+    HELPERS_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _log(msg):
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "  [SETUP] " + str(msg) + "\n")
+
     try:
         if getattr(sys, "frozen", False):
-            # Frozen EXE: schedule itself with --next flag
-            tr = '"{}" --next'.format(sys.executable)
+            cmd_exe  = sys.executable
+            cmd_args = "--next"
             runner_desc = sys.executable
         else:
-            # Script mode: use pythonw + pyw
             from .wallpaper import find_python_exe
-            py  = find_python_exe()
-            pyw = str(Path(sys.argv[0]).resolve())
-            tr  = '"{}" "{}" --next'.format(py, pyw)
+            py   = find_python_exe()
+            pyw  = str(Path(sys.argv[0]).resolve())
+            cmd_exe  = py
+            cmd_args = '"{}" --next'.format(pyw)
             runner_desc = pyw
 
-        username = os.environ.get("USERNAME", "")
-        import datetime as _dt
-        start_time = (_dt.datetime.now() +
-                      _dt.timedelta(minutes=1)).strftime("%H:%M")
+        start_boundary = (_dt.datetime.now() +
+                          _dt.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%S")
 
-        # schtasks /sc MINUTE caps /mo at 1439 — use DAILY/HOURLY for longer intervals
-        if interval_min >= 1440:
-            days = interval_min // 1440
-            sc_args = ["/sc", "DAILY", "/mo", str(days), "/st", start_time]
-        elif interval_min >= 60:
-            hours = interval_min // 60
-            sc_args = ["/sc", "HOURLY", "/mo", str(hours), "/st", start_time]
-        else:
-            sc_args = ["/sc", "MINUTE", "/mo", str(interval_min), "/st", start_time]
+        xml_body = (
+            '<?xml version="1.0" encoding="UTF-16"?>\n'
+            '<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">\n'
+            '  <RegistrationInfo>\n'
+            '    <Description>QiGor Wallpaper Slideshow — rotate every {intv} min</Description>\n'
+            '  </RegistrationInfo>\n'
+            '  <Triggers>\n'
+            '    <TimeTrigger>\n'
+            '      <Repetition>\n'
+            '        <Interval>PT{intv}M</Interval>\n'
+            '        <StopAtDurationEnd>false</StopAtDurationEnd>\n'
+            '      </Repetition>\n'
+            '      <StartBoundary>{start}</StartBoundary>\n'
+            '      <Enabled>true</Enabled>\n'
+            '    </TimeTrigger>\n'
+            '  </Triggers>\n'
+            '  <Principals>\n'
+            '    <Principal id="Author">\n'
+            '      <LogonType>InteractiveToken</LogonType>\n'
+            '      <RunLevel>LeastPrivilege</RunLevel>\n'
+            '    </Principal>\n'
+            '  </Principals>\n'
+            '  <Settings>\n'
+            '    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n'
+            '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n'
+            '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n'
+            '    <StartWhenAvailable>true</StartWhenAvailable>\n'
+            '    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\n'
+            '    <AllowStartOnDemand>true</AllowStartOnDemand>\n'
+            '    <Enabled>true</Enabled>\n'
+            '    <Hidden>false</Hidden>\n'
+            '    <RunOnlyIfIdle>false</RunOnlyIfIdle>\n'
+            '    <WakeToRun>false</WakeToRun>\n'
+            '    <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>\n'
+            '    <Priority>7</Priority>\n'
+            '  </Settings>\n'
+            '  <Actions Context="Author">\n'
+            '    <Exec>\n'
+            '      <Command>{cmd}</Command>\n'
+            '      <Arguments>{args}</Arguments>\n'
+            '    </Exec>\n'
+            '  </Actions>\n'
+            '</Task>'
+        ).format(
+            intv=interval_min,
+            start=start_boundary,
+            cmd=_sax.escape(cmd_exe),
+            args=_sax.escape(cmd_args),
+        )
 
-        cmd = [
-            "schtasks", "/create", "/f",
-            "/tn", TASK_NAME,
-            "/tr", tr,
-        ] + sc_args + [
-            "/it",
-            "/ru", username,
-        ]
+        tmp_xml = HELPERS_DIR / "_task_create.xml"
+        tmp_xml.write_text(xml_body, encoding="utf-16")
+        _log("Creating task: interval={}min  StartWhenAvailable=true  runner={}".format(
+            interval_min, runner_desc))
 
+        cmd = ["schtasks", "/create", "/f", "/tn", TASK_NAME, "/xml", str(tmp_xml)]
         r = subprocess.run(cmd, capture_output=True, text=True)
+        _log("schtasks rc={}  {}".format(r.returncode, (r.stdout or r.stderr or "").strip()))
+
+        try:
+            tmp_xml.unlink()
+        except Exception:
+            pass
+
         if r.returncode == 0:
-            # Also register an on-logon task so missed triggers are caught up
-            # when the user logs back in.  The helper itself guards against
-            # running too soon (elapsed < interval), so duplicate fires are safe.
-            cmd_logon = [
-                "schtasks", "/create", "/f",
-                "/tn", TASK_NAME + "_OnLogon",
-                "/tr", tr,
-                "/sc", "ONLOGON",
-                "/ru", username,
-                "/it",
-            ]
-            subprocess.run(cmd_logon, capture_output=True, text=True)
-            return True, "Scheduled every {} min.\nRunner: {}".format(
+            return True, "Scheduled every {} min (StartWhenAvailable=true).\nRunner: {}".format(
                 interval_min, runner_desc)
+
         err = (r.stderr or r.stdout or "unknown error").strip()
         return False, "schtasks failed (code {}):\n{}\n\nCommand:\n{}".format(
             r.returncode, err, " ".join(cmd))
@@ -471,6 +541,11 @@ class SlideshowDialog(tk.Toplevel):
         tk.Button(btn_row, text="📋 Log", height=2, font=fn,
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
                   command=self._view_log).pack(
+                      side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        c = BTN_COLORS["primary"]
+        tk.Button(btn_row, text="⚙ Test Task", height=2, font=fn,
+                  bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+                  command=self._test_task).pack(
                       side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         c = BTN_COLORS["danger"]
         tk.Button(btn_row, text="⏹ Stop", height=2, font=fn,
@@ -683,6 +758,23 @@ class SlideshowDialog(tk.Toplevel):
             self.destroy()
         except Exception as e:
             messagebox.showerror("Error", str(e), parent=self)
+
+    def _test_task(self):
+        """Trigger the scheduled task via schtasks /run and then open the log."""
+        if not is_scheduled():
+            messagebox.showinfo("Not Scheduled",
+                "No slideshow task is scheduled.\nClick ▶ Start first.", parent=self)
+            return
+        r = subprocess.run(
+            ["schtasks", "/run", "/tn", TASK_NAME],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or "unknown").strip()
+            messagebox.showerror("Test Failed",
+                "schtasks /run failed:\n{}".format(err), parent=self)
+            return
+        # Wait a moment for the task process to write its log entry, then show log
+        self.after(2500, self._view_log)
 
     def _view_log(self):
         log_path = HELPERS_DIR / "_slideshow_log.txt"
