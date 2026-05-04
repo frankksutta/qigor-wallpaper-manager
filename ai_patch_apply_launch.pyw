@@ -28,7 +28,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-AI_PATCH_APPLY_PYW = Path(r"C:\Users\my4nt\OneDrive\lucid24\py_tools\ai_patch\ai_patch_apply.pyw")
+AI_PATCH_APPLY_PYW = Path(r"C:\Users\my4nt\OneDrive - Early Buddhism Meditation Preservation Society\lucid24\py_tools\ai_patch\ai_patch_apply.pyw")
 
 PROJECT_ROOT = Path(__file__).parent.resolve()
 
