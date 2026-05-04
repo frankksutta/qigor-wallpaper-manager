@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR, WALLPAPER_STYLES, HELPERS_DIR, APP_BUILD
 from .wallpaper import find_python_exe
+from .tooltip import Tooltip
 
 TASK_NAME  = "QiGorWallpaperSlideshow"
 STATE_FILE = Path.home() / ".qigor-wallpaper" / "slideshow_state.json"
@@ -528,33 +529,58 @@ class SlideshowDialog(tk.Toplevel):
         btn_row.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(4, 12))
 
         c = BTN_COLORS["success"]
-        tk.Button(btn_row, text="▶ Start", height=2, font=fnb,
+        self._btn_start = tk.Button(btn_row, text="▶ Start", height=2, font=fnb,
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-                  command=self._start).pack(
-                      side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+                  command=self._start)
+        self._btn_start.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        Tooltip(self._btn_start,
+                "Schedule the slideshow.\n"
+                "If already running, applies any changed settings\n"
+                "(folder, interval, style) and resets the timer.")
+
         c = BTN_COLORS["primary"]
-        tk.Button(btn_row, text="⏭ Next Now", height=2, font=fn,
+        btn_next = tk.Button(btn_row, text="⏭ Next Now", height=2, font=fn,
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-                  command=self._next_now).pack(
-                      side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+                  command=self._next_now)
+        btn_next.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        Tooltip(btn_next,
+                "Switch to the next wallpaper immediately,\n"
+                "bypassing the schedule timer.")
+
         c = BTN_COLORS["warning"]
-        tk.Button(btn_row, text="📋 Log", height=2, font=fn,
+        btn_log = tk.Button(btn_row, text="📋 Log", height=2, font=fn,
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-                  command=self._view_log).pack(
-                      side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+                  command=self._view_log)
+        btn_log.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        Tooltip(btn_log,
+                "View the rotation history log:\n"
+                "timestamps, guard decisions, and any errors.")
+
         c = BTN_COLORS["primary"]
-        tk.Button(btn_row, text="⚙ Test Task", height=2, font=fn,
+        self._btn_test = tk.Button(btn_row, text="⚙ Test Task", height=2, font=fn,
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-                  command=self._test_task).pack(
-                      side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+                  command=self._test_task, state="disabled")
+        self._btn_test.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        Tooltip(self._btn_test,
+                "Fire the Windows scheduled task right now\n"
+                "to confirm the scheduler is working, then open the log.\n"
+                "(Only available while the slideshow is running.)")
+
         c = BTN_COLORS["danger"]
-        tk.Button(btn_row, text="⏹ Stop", height=2, font=fn,
+        self._btn_stop = tk.Button(btn_row, text="⏹ Stop", height=2, font=fn,
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-                  command=self._stop).pack(
-                      side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        tk.Button(btn_row, text="Close", height=2, font=fn,
+                  command=self._stop, state="disabled")
+        self._btn_stop.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        Tooltip(self._btn_stop,
+                "Remove the scheduled task — stops automatic rotation.\n"
+                "Your current wallpaper stays as-is.\n"
+                "(Only available while the slideshow is running.)")
+
+        btn_close = tk.Button(btn_row, text="Close", height=2, font=fn,
                   bg=t["btn_bg"], fg=t["btn_fg"],
-                  command=self.destroy).pack(side=tk.LEFT, fill=tk.X, expand=True)
+                  command=self.destroy)
+        btn_close.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        Tooltip(btn_close, "Close this window.\nThe slideshow keeps running in the background.")
 
         # ── Body ──────────────────────────────────────────────────────────────
         body = tk.Frame(self, bg=t["bg"])
@@ -583,9 +609,10 @@ class SlideshowDialog(tk.Toplevel):
             color = (CONSOLE_COLORS[theme_name]["green"] if scheduled
                      else CONSOLE_COLORS[theme_name]["yellow"])
             if self.winfo_exists():
-                self.after(0, lambda: (
-                    self._status_var.set(status),
-                    self._status_label.config(fg=color),
+                self.after(0, lambda s=scheduled, st=status, c=color: (
+                    self._status_var.set(st),
+                    self._status_label.config(fg=c),
+                    self._set_running_state(s),
                 ))
         threading.Thread(target=_fetch_status, daemon=True).start()
 
@@ -660,6 +687,12 @@ class SlideshowDialog(tk.Toplevel):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
+    def _set_running_state(self, running: bool):
+        """Enable/disable buttons that only make sense when the task is (not) running."""
+        state = "normal" if running else "disabled"
+        self._btn_stop.config(state=state)
+        self._btn_test.config(state=state)
+
     def _browse_folder(self):
         d = filedialog.askdirectory(title="Select slideshow folder",
                                     initialdir=self._folder_var.get())
@@ -727,6 +760,7 @@ class SlideshowDialog(tk.Toplevel):
         if ok:
             self.result = "started"
             self._status_var.set(query_task_status())
+            self._set_running_state(True)
             # Auto-close result window after 3s, then close dialog
             rw.after(3000, lambda: (rw.destroy(), self.destroy()))
 
