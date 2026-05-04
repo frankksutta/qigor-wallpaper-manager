@@ -80,7 +80,7 @@ def is_scheduled() -> bool:
 def query_task_status() -> str:
     try:
         r = subprocess.run(
-            ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST"],
+            ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST", "/v"],
             capture_output=True, text=True, timeout=8)
         if r.returncode != 0:
             return "Not scheduled."
@@ -362,7 +362,7 @@ def _run_next_headless(force: bool = False):
     # Query task status so the log shows when the next fire is scheduled
     try:
         r2 = subprocess.run(
-            ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST"],
+            ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST", "/v"],
             capture_output=True, text=True, timeout=8)
         if r2.returncode == 0:
             lines = {}
