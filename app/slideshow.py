@@ -273,11 +273,21 @@ def _run_next_headless(force: bool = False):
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "  " + str(msg) + "\n")
 
+    def _toast(title, msg):
+        try:
+            from winotify import Notification
+            Notification(app_id="QiGor Wallpaper Manager",
+                         title=title, msg=msg, duration="long").show()
+        except Exception:
+            pass
+
     log("--- --next triggered. argv={} force={}".format(sys.argv[1:], force))
 
     state = load_state()
     if not state:
-        log("ERROR: no state file. Configure slideshow in the QiGor app."); return
+        log("ERROR: no state file. Configure slideshow in the QiGor app.")
+        _toast("Slideshow stopped", "No configuration found. Open QiGor and click ▶ Start.")
+        return
 
     interval_min = state.get("interval_min", 10)
     last_set_str = state.get("last_set", "")
@@ -308,11 +318,15 @@ def _run_next_headless(force: bool = False):
     shuffle = state.get("shuffle", True)
 
     if not folder.exists():
-        log("ERROR: folder not found: " + str(folder)); return
+        log("ERROR: folder not found: " + str(folder))
+        _toast("Slideshow stopped", "Folder not found:\n{}".format(folder))
+        return
 
     images = get_images_in_folder(folder)
     if not images:
-        log("ERROR: no images in " + str(folder)); return
+        log("ERROR: no images in " + str(folder))
+        _toast("Slideshow stopped", "No images found in:\n{}".format(folder))
+        return
 
     queue = state.get("queue", [])
     index = state.get("queue_index", 0)
@@ -335,7 +349,9 @@ def _run_next_headless(force: bool = False):
         log("Skipping missing: " + candidate)
 
     if not chosen:
-        log("ERROR: all files in queue are missing."); return
+        log("ERROR: all files in queue are missing.")
+        _toast("Slideshow stopped", "All images in the queue are missing.\nCheck folder: {}".format(folder))
+        return
 
     # Apply wallpaper via registry + ctypes
     styles = {
@@ -381,6 +397,23 @@ def _run_next_headless(force: bool = False):
         log("Task query failed: {}".format(e))
 
 
+def get_expected_runner() -> "str | None":
+    """
+    Return the path the Task Scheduler task should invoke.
+    Priority: frozen EXE > QiGor_Wallpaper_Manager.exe > qigor_wallpaper_manager.pyw.
+    Uses specific filenames — never sys.argv[0] (avoids the '-c' launcher bug) and
+    never a blind glob (avoids picking up unrelated .pyw files in the project root).
+    """
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    pkg_root = Path(__file__).resolve().parent.parent
+    for name in ("QiGor_Wallpaper_Manager.exe", "qigor_wallpaper_manager.pyw"):
+        candidate = pkg_root / name
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 def schedule_task(interval_min: int):
     """
     Schedule  exe --next  via Task Scheduler XML.
@@ -399,17 +432,24 @@ def schedule_task(interval_min: int):
             f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "  [SETUP] " + str(msg) + "\n")
 
     try:
-        if getattr(sys, "frozen", False):
-            cmd_exe  = sys.executable
+        runner = get_expected_runner()
+        if runner is None:
+            pkg_root = Path(__file__).resolve().parent.parent
+            return False, (
+                "Cannot find the application runner.\n\n"
+                "Looked for QiGor_Wallpaper_Manager.exe, *.pyw, and *.py in:\n"
+                "  {}\n\n"
+                "If you have moved or renamed the application, re-run it from its "
+                "new location and open Slideshow ▶ Start to re-register the task."
+            ).format(pkg_root)
+        if runner.lower().endswith(".exe"):
+            cmd_exe  = runner
             cmd_args = "--next"
-            runner_desc = sys.executable
         else:
             from .wallpaper import find_python_exe
-            py   = find_python_exe()
-            pyw  = str(Path(sys.argv[0]).resolve())
-            cmd_exe  = py
-            cmd_args = '"{}" --next'.format(pyw)
-            runner_desc = pyw
+            cmd_exe  = find_python_exe()
+            cmd_args = '"{}" --next'.format(runner)
+        runner_desc = runner
 
         start_boundary = (_dt.datetime.now() +
                           _dt.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -489,6 +529,59 @@ def schedule_task(interval_min: int):
     except Exception:
         import traceback
         return False, "Exception in schedule_task:\n" + traceback.format_exc()
+
+
+def _query_task_fields() -> "dict | None":
+    """Run schtasks /query and return a key→value dict, or None if task not found."""
+    try:
+        r = subprocess.run(
+            ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST", "/v"],
+            capture_output=True, text=True, timeout=8)
+        if r.returncode != 0:
+            return None
+        fields: dict = {}
+        for line in r.stdout.splitlines():
+            if ":" in line:
+                k, _, v = line.partition(":")
+                fields[k.strip().lower()] = v.strip()
+        return fields
+    except Exception:
+        return None
+
+
+def slideshow_runner_is_stale() -> bool:
+    """
+    Return True if a slideshow task is scheduled but its registered command path
+    doesn't match get_expected_runner() — meaning the EXE or script has moved.
+    """
+    fields = _query_task_fields()
+    if fields is None:
+        return False
+    expected = get_expected_runner()
+    if expected is None:
+        return False
+    task_to_run = fields.get("task to run", "")
+    return expected.lower() not in task_to_run.lower()
+
+
+def slideshow_last_run_failed() -> "tuple[bool, str]":
+    """
+    Return (failed, detail) where failed=True means the last scheduled run exited
+    with a non-zero code. Task Scheduler never notifies the user of failures, so
+    this is the only way to surface silent breakage on startup.
+    """
+    fields = _query_task_fields()
+    if fields is None:
+        return False, ""
+    result_str = fields.get("last result", "0").strip()
+    try:
+        code = int(result_str, 0)
+    except ValueError:
+        return False, ""
+    if code == 0:
+        return False, ""
+    last_run = fields.get("last run time", "?")
+    return True, "exit code {} at {}".format(result_str, last_run)
 
 
 # ── Dialog ────────────────────────────────────────────────────────────────────

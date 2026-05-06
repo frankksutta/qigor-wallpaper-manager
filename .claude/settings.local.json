@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "PowerShell(Get-Content *)",
-      "PowerShell(Get-ScheduledTask *)"
+      "PowerShell(Get-ScheduledTask *)",
+      "Bash(schtasks /query /tn \"QiGorWallpaperSlideshow\" /fo LIST /v)",
+      "PowerShell(schtasks *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\my4nt\\\\OneDrive - Early Buddhism Meditation Preservation Society\\\\lucid24\\\\py_tools\\\\mp4_movie_and_image_tools\\\\qigor_wallpaper\" | Where-Object { $_.Extension -in \".pyw\",\".py\" } | Select-Object Name | Sort-Object Name)",
+      "PowerShell(python -c \"from winotify import Notification; print\\('winotify OK'\\)\" 2>&1)"
     ]
   }
 }

@@ -22,7 +22,8 @@ from .config import Config
 from .tooltip import Tooltip
 from .dialogs import AboutDialog, ErrorDialog, _InputDialog, _RenameDialog
 from .reminder import _ReminderDialog
-from .slideshow import SlideshowDialog, is_scheduled as slideshow_is_scheduled
+from .slideshow import (SlideshowDialog, is_scheduled as slideshow_is_scheduled,
+                        slideshow_runner_is_stale, slideshow_last_run_failed)
 from .desktop_preview import start_preview
 
 
@@ -85,6 +86,7 @@ class App:
         self._refresh_history_list()
         self._refresh_favorites_list()
         self._show_last_changed()
+        threading.Thread(target=self._check_slideshow_runner, daemon=True).start()
         self.root.after(0, self._update_ls_btn)
 
         if "--remind" in sys.argv:
@@ -1001,6 +1003,18 @@ class App:
         """Minimize all windows, show countdown overlay, restore on timer/click."""
         hwnd = int(self.root.wm_frame(), 16)
         start_preview(self.root, hwnd)
+
+    def _check_slideshow_runner(self):
+        if slideshow_runner_is_stale():
+            self._log_threadsafe(
+                "⚠  Slideshow task points to an old location. "
+                "Open Slideshow → ▶ Start to update it.", "yellow")
+            return
+        failed, detail = slideshow_last_run_failed()
+        if failed:
+            self._log_threadsafe(
+                "⚠  Slideshow last run failed ({})."
+                "  Open Slideshow → 📋 Log for details.".format(detail), "yellow")
 
     def _show_slideshow_dialog(self):
         dialog = SlideshowDialog(self.root, self.cfg, self.theme_name, self.font_size,
