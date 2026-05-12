@@ -584,6 +584,30 @@ def slideshow_last_run_failed() -> "tuple[bool, str]":
     return True, "exit code {} at {}".format(result_str, last_run)
 
 
+def slideshow_is_overdue() -> "tuple[bool, str]":
+    """
+    Return (overdue, description) based on the state file.
+    overdue=True when now - last_set > 2 × interval_min, meaning the scheduled
+    task likely stopped firing on its own.
+    """
+    import datetime as _dt
+    state = load_state()
+    last_set_str = state.get("last_set", "")
+    interval_min = state.get("interval_min", 10)
+    if not last_set_str:
+        return False, ""
+    try:
+        last_set    = _dt.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")
+        elapsed_min = (_dt.datetime.now() - last_set).total_seconds() / 60
+        if elapsed_min > interval_min * 2:
+            hours = elapsed_min / 60
+            return True, "last set {:.0f}h ago (interval {}min)".format(
+                hours, interval_min)
+    except Exception:
+        pass
+    return False, ""
+
+
 # ── Dialog ────────────────────────────────────────────────────────────────────
 
 class SlideshowDialog(tk.Toplevel):
@@ -696,18 +720,7 @@ class SlideshowDialog(tk.Toplevel):
         self._status_label.pack(anchor=tk.W, pady=(0, 6))
         self._theme_name = theme_name
 
-        def _fetch_status():
-            scheduled = is_scheduled()
-            status    = query_task_status()
-            color = (CONSOLE_COLORS[theme_name]["green"] if scheduled
-                     else CONSOLE_COLORS[theme_name]["yellow"])
-            if self.winfo_exists():
-                self.after(0, lambda s=scheduled, st=status, c=color: (
-                    self._status_var.set(st),
-                    self._status_label.config(fg=c),
-                    self._set_running_state(s),
-                ))
-        threading.Thread(target=_fetch_status, daemon=True).start()
+        self._refresh_status()
 
         if state.get("last_file"):
             tk.Label(body,
@@ -785,6 +798,33 @@ class SlideshowDialog(tk.Toplevel):
         state = "normal" if running else "disabled"
         self._btn_stop.config(state=state)
         self._btn_test.config(state=state)
+
+    def _refresh_status(self):
+        """Refresh the status label from a background thread."""
+        theme_name = self._theme_name
+
+        def _fetch():
+            scheduled = is_scheduled()
+            status    = query_task_status()
+            if scheduled:
+                overdue, _desc = slideshow_is_overdue()
+                if overdue:
+                    status_str = status + "\n⚠ Slideshow overdue — click ▶ Start to re-register."
+                    color = CONSOLE_COLORS[theme_name]["yellow"]
+                else:
+                    status_str = status
+                    color = CONSOLE_COLORS[theme_name]["green"]
+            else:
+                status_str = status
+                color = CONSOLE_COLORS[theme_name]["yellow"]
+            if self.winfo_exists():
+                self.after(0, lambda s=scheduled, st=status_str, c=color: (
+                    self._status_var.set(st),
+                    self._status_label.config(fg=c),
+                    self._set_running_state(s),
+                ))
+
+        threading.Thread(target=_fetch, daemon=True).start()
 
     def _browse_folder(self):
         d = filedialog.askdirectory(title="Select slideshow folder",
@@ -900,8 +940,46 @@ class SlideshowDialog(tk.Toplevel):
             messagebox.showerror("Test Failed",
                 "schtasks /run failed:\n{}".format(err), parent=self)
             return
-        # Wait a moment for the task process to write its log entry, then show log
-        self.after(2500, self._view_log)
+        # Wait for the task process to start, run, and write its log entry.
+        # 4 s gives frozen EXEs on slower machines enough time to complete.
+        self.after(4000, self._on_test_done)
+
+    def _on_test_done(self):
+        """Called after the test-task wait: refresh status, check guard, open log."""
+        import datetime as _dt
+        self._refresh_status()
+
+        # Check whether the guard blocked the run in the last 15 seconds.
+        log_path = HELPERS_DIR / "_slideshow_log.txt"
+        if log_path.exists():
+            try:
+                cutoff = _dt.datetime.now() - _dt.timedelta(seconds=15)
+                recent_skipped = False
+                for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                    if "Skipping: too soon" not in line:
+                        continue
+                    try:
+                        if _dt.datetime.strptime(line[:19], "%Y-%m-%d %H:%M:%S") >= cutoff:
+                            recent_skipped = True
+                            break
+                    except Exception:
+                        pass
+                if recent_skipped:
+                    state    = load_state()
+                    interval = state.get("interval_min", 10)
+                    last_set = state.get("last_set", "?")
+                    messagebox.showinfo(
+                        "Task Fired — Wallpaper Unchanged",
+                        "The task ran but the guard skipped the wallpaper change.\n\n"
+                        "Last set:  {}\n"
+                        "Interval:  {} min  (guard threshold: {:.0f} min)\n\n"
+                        "The wallpaper will change automatically once the full "
+                        "interval has elapsed.".format(last_set, interval, interval * 0.9),
+                        parent=self)
+            except Exception:
+                pass
+
+        self._view_log()
 
     def _view_log(self):
         log_path = HELPERS_DIR / "_slideshow_log.txt"

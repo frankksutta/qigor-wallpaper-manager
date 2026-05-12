@@ -6,7 +6,13 @@
       "Bash(schtasks /query /tn \"QiGorWallpaperSlideshow\" /fo LIST /v)",
       "PowerShell(schtasks *)",
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\my4nt\\\\OneDrive - Early Buddhism Meditation Preservation Society\\\\lucid24\\\\py_tools\\\\mp4_movie_and_image_tools\\\\qigor_wallpaper\" | Where-Object { $_.Extension -in \".pyw\",\".py\" } | Select-Object Name | Sort-Object Name)",
-      "PowerShell(python -c \"from winotify import Notification; print\\('winotify OK'\\)\" 2>&1)"
+      "PowerShell(python -c \"from winotify import Notification; print\\('winotify OK'\\)\" 2>&1)",
+      "Bash(Get-ChildItem -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(python -c \"import ast, sys; ast.parse\\(open\\('app/slideshow.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/slideshow.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
