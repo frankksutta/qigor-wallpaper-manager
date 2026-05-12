@@ -153,17 +153,21 @@ LOG_COLORS_LIGHT = {
 }
 
 BTNS = {
-    "build":   dict(bg="#1a6b2e", fg="#fff", abg="#1e8038", text="🔨  Build EXE",
-                    tip="Run PyInstaller to bundle the app into a single portable .exe.\n"
-                        "Bundles app/, assets/, and tkinterdnd2 DLLs.\n"
-                        "Takes 30–90 seconds. Output: QiGor_Wallpaper_Manager.exe"),
-    "github":  dict(bg="#1565c0", fg="#fff", abg="#1976d2", text="🐙  Upload Release",
-                    tip="Upload QiGor_Wallpaper_Manager.exe to a GitHub Release.\n"
-                        "Creates the repo and 'latest' release tag if they don't exist.\n"
-                        "Requires a GitHub token with 'repo' scope."),
-    "clean":   dict(bg="#7a1c1c", fg="#fff", abg="#9e2020", text="🧹  Clean",
-                    tip="Remove PyInstaller build artifacts: build/, dist/, *.spec\n"
-                        "Safe to run any time. Does not delete the .exe output."),
+    "build":    dict(bg="#1a6b2e", fg="#fff", abg="#1e8038", text="🔨  Build EXE",
+                     tip="Run PyInstaller to bundle the app into a single portable .exe.\n"
+                         "Bundles app/, assets/, and tkinterdnd2 DLLs.\n"
+                         "Takes 30–90 seconds. Output: QiGor_Wallpaper_Manager.exe"),
+    "github":   dict(bg="#1565c0", fg="#fff", abg="#1976d2", text="🐙  Upload Release",
+                     tip="Upload QiGor_Wallpaper_Manager.exe to a GitHub Release.\n"
+                         "Creates the repo and 'latest' release tag if they don't exist.\n"
+                         "Requires a GitHub token with 'repo' scope."),
+    "clean":    dict(bg="#7a1c1c", fg="#fff", abg="#9e2020", text="🧹  Clean",
+                     tip="Remove PyInstaller build artifacts: build/, dist/, *.spec\n"
+                         "Safe to run any time. Does not delete the .exe output."),
+    "releases": dict(bg="#00695c", fg="#fff", abg="#00796b", text="🔗  View Release",
+                     tip="Open the GitHub releases page in your browser.\n"
+                         "github.com/{}/{}/releases/latest".format(
+                             GITHUB_USER, GITHUB_REPO)),
 }
 
 
@@ -400,6 +404,17 @@ class App:
             btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
             Tooltip(btn, b["tip"])
             self._btns[key] = btn
+
+        # View Release — outside self._btns so it stays enabled during builds
+        b = BTNS["releases"]
+        self._releases_btn = tk.Button(bf, text=b["text"],
+                            bg=b["bg"], fg=b["fg"],
+                            activebackground=b["abg"], activeforeground="#fff",
+                            font=("Segoe UI", 11, "bold"), height=2,
+                            relief=tk.FLAT, cursor="hand2",
+                            command=self._view_release)
+        self._releases_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        Tooltip(self._releases_btn, b["tip"])
 
         # ── Git source sync ───────────────────────────────────────────────────
         gitsf = tk.LabelFrame(content,
@@ -1016,6 +1031,11 @@ class App:
             self._log("Uncommitted changes:\n{}".format(out), "warning")
         else:
             self._log("Working tree is clean.", "success")
+
+    def _view_release(self):
+        import webbrowser
+        webbrowser.open("https://github.com/{}/{}/releases/latest".format(
+            GITHUB_USER, GITHUB_REPO))
 
     # ── Clean ─────────────────────────────────────────────────────────────────
 
