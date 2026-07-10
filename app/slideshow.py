@@ -11,8 +11,6 @@ State: ~/.qigor-wallpaper/slideshow_state.json
 from __future__ import annotations
 
 import json
-import os
-import random
 import subprocess
 import sys
 import threading
@@ -114,145 +112,6 @@ def remove_task() -> bool:
 
 
 
-# ── Helper script writer ──────────────────────────────────────────────────────
-
-def write_slideshow_helper() -> Path:
-    """
-    Write _wallpaper_slideshow.py to HELPERS_DIR (~/.qigor-wallpaper/helpers/).
-    Fixed location independent of EXE — task path never goes stale on relocation.
-    """
-    HELPERS_DIR.mkdir(parents=True, exist_ok=True)
-    script = HELPERS_DIR / "_wallpaper_slideshow.py"
-
-    # STATE_FILE path — use raw string literal in the generated script
-    sf_str = str(STATE_FILE).replace("\\", "/")  # forward slashes work on Windows
-
-    lines = [
-        '#!/usr/bin/env python',
-        '"""Wallpaper slideshow helper - run by Windows Task Scheduler."""',
-        'import json, os, random, ctypes, winreg, datetime',
-        'from pathlib import Path',
-        '',
-        'STATE_FILE = Path("' + sf_str + '")',
-        'IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif"}',
-        'LOG_FILE   = STATE_FILE.parent / "_slideshow_log.txt"',
-        '',
-        'def log(msg):',
-        '    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")',
-        '    with open(LOG_FILE, "a", encoding="utf-8") as f:',
-        '        f.write(ts + "  " + str(msg) + "\\n")',
-        '',
-        'def load_state():',
-        '    try:',
-        '        if STATE_FILE.exists():',
-        '            return json.loads(STATE_FILE.read_text(encoding="utf-8"))',
-        '    except Exception:',
-        '        pass',
-        '    return {}',
-        '',
-        'def save_state(s):',
-        '    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)',
-        '    STATE_FILE.write_text(json.dumps(s, indent=2), encoding="utf-8")',
-        '',
-        'def get_images(folder):',
-        '    try:',
-        '        return sorted(f.name for f in Path(folder).iterdir()',
-        '                      if f.is_file() and f.suffix.lower() in IMAGE_EXTS)',
-        '    except Exception:',
-        '        return []',
-        '',
-        'def set_wallpaper(path, style):',
-        '    styles = {',
-        '        "Fill":    ("10", "0"),',
-        '        "Fit":     ("6",  "0"),',
-        '        "Stretch": ("2",  "0"),',
-        '        "Tile":    ("0",  "1"),',
-        '        "Center":  ("0",  "0"),',
-        '        "Span":    ("22", "0"),',
-        '    }',
-        '    sv, tv = styles.get(style, ("10", "0"))',
-        '    try:',
-        '        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,',
-        '            "Control Panel\\\\Desktop", 0, winreg.KEY_SET_VALUE)',
-        '        winreg.SetValueEx(key, "WallpaperStyle", 0, winreg.REG_SZ, sv)',
-        '        winreg.SetValueEx(key, "TileWallpaper",  0, winreg.REG_SZ, tv)',
-        '        winreg.CloseKey(key)',
-        '    except Exception as e:',
-        '        log("Registry error: " + str(e))',
-        '    ctypes.windll.user32.SystemParametersInfoW(20, 0, str(path), 3)',
-        '',
-        'def main():',
-        '    log("Slideshow helper started.")',
-        '    state = load_state()',
-        '    if not state:',
-        '        log("ERROR: no state file. Configure slideshow in QiGor app.")',
-        '        return',
-        '    # Guard: skip if last rotation was less than 90% of the interval ago.',
-        '    interval_min = state.get("interval_min", 10)',
-        '    last_set_str = state.get("last_set", "")',
-        '    if last_set_str:',
-        '        try:',
-        '            last_set = datetime.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")',
-        '            elapsed_min = (datetime.datetime.now() - last_set).total_seconds() / 60',
-        '            if elapsed_min < interval_min * 0.9:',
-        '                log("Skipping: only {:.1f} min since last set (interval={}min).".format(',
-        '                    elapsed_min, interval_min))',
-        '                return',
-        '        except Exception:',
-        '            pass',
-        '    folder  = Path(state.get("folder", ""))',
-        '    style   = state.get("style", "Fill")',
-        '    shuffle = state.get("shuffle", True)',
-        '    if not folder.exists():',
-        '        log("ERROR: folder not found: " + str(folder))',
-        '        return',
-        '    images = get_images(folder)',
-        '    if not images:',
-        '        log("ERROR: no images in " + str(folder))',
-        '        return',
-        '    queue = state.get("queue", [])',
-        '    index = state.get("queue_index", 0)',
-        '    needs_rebuild = (',
-        '        not queue',
-        '        or index >= len(queue)',
-        '        or set(images) != set(queue)',
-        '    )',
-        '    if needs_rebuild:',
-        '        log("Rebuilding queue (" + str(len(images)) + " images)")',
-        '        queue = list(images)',
-        '        if shuffle:',
-        '            random.shuffle(queue)',
-        '        index = 0',
-        '    chosen = None',
-        '    for _ in range(len(queue)):',
-        '        candidate = queue[index % len(queue)]',
-        '        full_path = folder / candidate',
-        '        index = (index + 1) % len(queue)',
-        '        if full_path.exists():',
-        '            chosen = full_path',
-        '            break',
-        '        log("Skipping missing: " + candidate)',
-        '    if not chosen:',
-        '        log("ERROR: all files in queue are missing.")',
-        '        return',
-        '    log("Setting: " + chosen.name + " (style=" + style + ")")',
-        '    set_wallpaper(chosen, style)',
-        '    state["queue"]       = queue',
-        '    state["queue_index"] = index',
-        '    state["last_set"]    = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")',
-        '    state["last_file"]   = chosen.name',
-        '    save_state(state)',
-        '    log("Done. Next index: " + str(index) + "/" + str(len(queue)))',
-        '',
-        'if __name__ == "__main__":',
-        '    main()',
-        '',
-    ]
-
-    script.write_text("\n".join(lines), encoding="utf-8")
-    return script
-
-
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
 def _run_next_headless(force: bool = False):
@@ -342,7 +201,10 @@ def _run_next_headless(force: bool = False):
     for _ in range(len(queue)):
         candidate = queue[index % len(queue)]
         full_path = folder / candidate
-        index = (index + 1) % len(queue)
+        # No modulo: index must be allowed to reach len(queue) so the next
+        # run's "index >= len(queue)" check rebuilds — and reshuffles — the
+        # queue after every full cycle.
+        index += 1
         if full_path.exists():
             chosen = full_path
             break
@@ -573,14 +435,20 @@ def slideshow_last_run_failed() -> "tuple[bool, str]":
     fields = _query_task_fields()
     if fields is None:
         return False, ""
+    last_run = fields.get("last run time", "").strip()
+    if last_run.lower() in ("", "never", "n/a"):
+        return False, ""
     result_str = fields.get("last result", "0").strip()
     try:
         code = int(result_str, 0)
     except ValueError:
         return False, ""
-    if code == 0:
+    # Benign scheduler codes, not failures:
+    #   0        = success
+    #   267009   = 0x41301 task is currently running
+    #   267011   = 0x41303 task has not yet run
+    if code in (0, 267009, 267011):
         return False, ""
-    last_run = fields.get("last run time", "?")
     return True, "exit code {} at {}".format(result_str, last_run)
 
 
@@ -817,12 +685,19 @@ class SlideshowDialog(tk.Toplevel):
             else:
                 status_str = status
                 color = CONSOLE_COLORS[theme_name]["yellow"]
-            if self.winfo_exists():
-                self.after(0, lambda s=scheduled, st=status_str, c=color: (
-                    self._status_var.set(st),
-                    self._status_label.config(fg=c),
-                    self._set_running_state(s),
-                ))
+            # Dialog may be destroyed while the schtasks query was running —
+            # both scheduling the callback and the callback itself must cope.
+            def _apply(s=scheduled, st=status_str, c=color):
+                try:
+                    self._status_var.set(st)
+                    self._status_label.config(fg=c)
+                    self._set_running_state(s)
+                except tk.TclError:
+                    pass
+            try:
+                self.after(0, _apply)
+            except (tk.TclError, RuntimeError):
+                pass
 
         threading.Thread(target=_fetch, daemon=True).start()
 
@@ -894,8 +769,16 @@ class SlideshowDialog(tk.Toplevel):
             self.result = "started"
             self._status_var.set(query_task_status())
             self._set_running_state(True)
-            # Auto-close result window after 3s, then close dialog
-            rw.after(3000, lambda: (rw.destroy(), self.destroy()))
+
+            # Auto-close result window after 3s, then close dialog.
+            # User may have closed either window already — ignore TclError.
+            def _auto_close():
+                for w in (rw, self):
+                    try:
+                        w.destroy()
+                    except tk.TclError:
+                        pass
+            rw.after(3000, _auto_close)
 
     def _stop(self):
         if remove_task():

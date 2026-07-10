@@ -110,11 +110,19 @@ class _ReminderDialog(tk.Toplevel):
             status = self._query_task_status()
             color = (CONSOLE_COLORS[theme_name]["green"] if "Ready" in status
                      else CONSOLE_COLORS[theme_name]["yellow"])
-            if self.winfo_exists():
-                self.after(0, lambda: (
-                    self._status_label_var.set(status),
-                    self._status_label_widget.config(fg=color),
-                ))
+
+            # Dialog may be destroyed while the schtasks query was running —
+            # both scheduling the callback and the callback itself must cope.
+            def _apply():
+                try:
+                    self._status_label_var.set(status)
+                    self._status_label_widget.config(fg=color)
+                except tk.TclError:
+                    pass
+            try:
+                self.after(0, _apply)
+            except (tk.TclError, RuntimeError):
+                pass
         threading.Thread(target=_fetch_status, daemon=True).start()
 
         freq_row = tk.Frame(body, bg=t["bg"])

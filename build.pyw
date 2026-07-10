@@ -22,6 +22,7 @@ GitHub release structure (standard Python project pattern):
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -51,6 +52,37 @@ GITHUB_REPO  = "qigor-wallpaper-manager"
 GITHUB_API   = "https://api.github.com"
 RELEASE_TAG  = "latest"
 RELEASE_NAME = "QiGor Wallpaper Manager — Latest"
+
+
+def read_app_versions() -> tuple:
+    """
+    Parse APP_VERSION and APP_BUILD from app/constants.py so the EXE's
+    file properties always match the source — no hardcoded duplicates here.
+    Returns (version_str, build_str), e.g. ("0.7", "0.7.4").
+    """
+    ver = build = None
+    try:
+        text = (SCRIPT_DIR / "app" / "constants.py").read_text(encoding="utf-8")
+        m = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', text, re.M)
+        if m:
+            ver = m.group(1)
+        m = re.search(r'^APP_BUILD\s*=\s*"([^"]+)"', text, re.M)
+        if m:
+            build = m.group(1)
+    except Exception:
+        pass
+    return ver or "0.0", build or ver or "0.0"
+
+
+def version_tuple4(s: str) -> tuple:
+    """'0.7.4' → (0, 7, 4, 0) — the 4-int form VSVersionInfo requires."""
+    parts = []
+    for p in s.split("."):
+        try:
+            parts.append(int(p))
+        except ValueError:
+            break
+    return tuple((parts + [0, 0, 0, 0])[:4])
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -222,7 +254,9 @@ class GitHubUploader:
             "name": self.repo,
             "description": "QiGor Wallpaper Manager — Windows wallpaper tool",
             "private": False,
-            "auto_init": True,
+            # No auto_init: it would create a 'main' branch with a README and
+            # make it the default, orphaning the 'master' branch we push to.
+            "auto_init": False,
             "has_issues": True,
             "has_wiki": False,
         })
@@ -268,9 +302,12 @@ class GitHubUploader:
         for a in res:
             if a["name"] == name:
                 self.log("  🗑  Removing existing: {}".format(name), "dim")
-                self._req("DELETE",
+                dres, dstatus = self._req("DELETE",
                     "/repos/{}/{}/releases/assets/{}".format(
                         self.user, self.repo, a["id"]))
+                if dstatus != 204:
+                    self.log("  ⚠  Could not delete old asset ({}): {}".format(
+                        dstatus, dres.get("message", "unknown")), "warning")
                 return
 
     def upload_asset(self, upload_url, file_path: Path, asset_name: str) -> bool:
@@ -368,7 +405,7 @@ class App:
 
         # ── GitHub token ──────────────────────────────────────────────────────
         gf = tk.LabelFrame(content,
-                           text="  GitHub Token  (repo scope — stored in ~/.qigor-wallpaper/)  ")
+                           text="  GitHub Token  (write access — stored in ~/.qigor-wallpaper/)  ")
         gf.pack(fill=tk.X, pady=(0, 4))
         tok_row = tk.Frame(gf)
         tok_row.pack(fill=tk.X, padx=6, pady=4)
@@ -377,8 +414,11 @@ class App:
                                    font=("Consolas", self._fsize), show="*")
         self._tok_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         Tooltip(self._tok_entry,
-                "GitHub Personal Access Token with 'repo' scope.\n"
-                "Create one at: github.com/settings/tokens\n"
+                "GitHub Personal Access Token.\n"
+                "• Classic token (ghp_…): needs the 'repo' scope.\n"
+                "• Fine-grained token (github_pat_…): needs access to this repo\n"
+                "  plus 'Contents: Read and write' permission.\n"
+                "Create/edit at: github.com/settings/tokens\n"
                 "Stored in ~/.qigor-wallpaper/build_config.json")
         self._show_tok = tk.BooleanVar(value=False)
         tk.Checkbutton(tok_row, text="Show", variable=self._show_tok,
@@ -733,13 +773,19 @@ class App:
         else:
             self._log("⚠   No icon — building without", "warning")
 
-        # Write a Windows version info file for proper file properties
+        # Write a Windows version info file for proper file properties.
+        # Version comes from app/constants.py (APP_BUILD) — single source of truth.
+        app_ver, app_build = read_app_versions()
+        vt = version_tuple4(app_build)
+        ver_str = "{}.{}.{}.{}".format(*vt)
+        self._log("Version: v{}  build {}  →  EXE file version {}".format(
+            app_ver, app_build, ver_str), "info")
         ver_file = SCRIPT_DIR / "_version_info.txt"
         ver_file.write_text(
             "VSVersionInfo(\n"
             "  ffi=FixedFileInfo(\n"
-            "    filevers=(0, 7, 0, 0),\n"
-            "    prodvers=(0, 7, 0, 0),\n"
+            "    filevers={vt},\n"
+            "    prodvers={vt},\n"
             "    mask=0x3f, flags=0x0, OS=0x40004,\n"
             "    fileType=0x1, subtype=0x0,\n"
             "    date=(0, 0)),\n"
@@ -747,15 +793,15 @@ class App:
             "    StringFileInfo([StringTable('040904B0', [\n"
             "      StringStruct('CompanyName', 'frankksutta'),\n"
             "      StringStruct('FileDescription', 'QiGor Wallpaper Manager'),\n"
-            "      StringStruct('FileVersion', '0.7.0.0'),\n"
+            "      StringStruct('FileVersion', '{vs}'),\n"
             "      StringStruct('InternalName', 'QiGor_Wallpaper_Manager'),\n"
             "      StringStruct('LegalCopyright', ''),\n"
             "      StringStruct('OriginalFilename', 'QiGor_Wallpaper_Manager.exe'),\n"
             "      StringStruct('ProductName', 'QiGor Wallpaper Manager'),\n"
-            "      StringStruct('ProductVersion', '0.7.0.0')])]),\n"
+            "      StringStruct('ProductVersion', '{vs}')])]),\n"
             "    VarFileInfo([VarStruct('Translation', [1033, 1200])])\n"
             "  ]\n"
-            ")\n",
+            ")\n".format(vt=vt, vs=ver_str),
             encoding="utf-8")
         cmd += ["--version-file", str(ver_file)]
 
@@ -884,7 +930,16 @@ class App:
             self._log("═" * 56, "header")
             self._status("Uploaded!")
         else:
-            self._log("❌  Upload failed — check token has 'repo' scope.", "error")
+            self._log("❌  Upload failed — the token lacks write access.", "error")
+            if token.startswith("github_pat_"):
+                self._log("Fine-grained token detected. It needs:", "warning")
+                self._log("  • Repository access: include {}/{}".format(
+                    GITHUB_USER, GITHUB_REPO), "warning")
+                self._log("  • Permissions → Contents: Read and write", "warning")
+                self._log("Edit it at: github.com/settings/personal-access-tokens", "warning")
+            else:
+                self._log("Classic token: enable the 'repo' scope at "
+                          "github.com/settings/tokens", "warning")
 
     # ── Git source sync ───────────────────────────────────────────────────────
 
@@ -972,7 +1027,8 @@ class App:
         self._git("init")
         self._git("add", "-A")
         rc = self._git("commit", "-m",
-                       "Initial commit — QiGor Wallpaper Manager v0.7")
+                       "Initial commit — QiGor Wallpaper Manager v{}".format(
+                           read_app_versions()[0]))
         if rc != 0:
             self._log("Commit failed — set git user.name / user.email first:", "error")
             self._log("  git config --global user.name 'Your Name'", "warning")

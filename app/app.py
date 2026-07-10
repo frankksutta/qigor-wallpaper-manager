@@ -5,8 +5,6 @@ UI construction is in ui.py. Logic modules: wallpaper, preview, dnd, reminder.
 """
 from __future__ import annotations
 import os
-import re
-import queue
 import shutil
 import sys
 import threading
@@ -20,7 +18,7 @@ from .constants import (APP_NAME, APP_VERSION, APP_BUILD, STORE_DIR, HELPERS_DIR
                         THEMES, BTN_COLORS, CONSOLE_COLORS, WIN_IMAGE_SOURCES)
 from .config import Config
 from .tooltip import Tooltip
-from .dialogs import AboutDialog, ErrorDialog, _InputDialog, _RenameDialog
+from .dialogs import AboutDialog, _InputDialog, _RenameDialog
 from .reminder import _ReminderDialog
 from .slideshow import (SlideshowDialog, is_scheduled as slideshow_is_scheduled,
                         slideshow_runner_is_stale, slideshow_last_run_failed)
@@ -88,9 +86,6 @@ class App:
         self._show_last_changed()
         threading.Thread(target=self._check_slideshow_runner, daemon=True).start()
         self.root.after(0, self._update_ls_btn)
-
-        if "--remind" in sys.argv:
-            pass  # handled headlessly in entry point before GUI loads
 
     # ── UI Construction ───────────────────────────────────────────────────────
     # Full _build_ui is in ui.py and patched in via _build_ui() below.
@@ -229,7 +224,8 @@ class App:
 
             is_url = src.lower().startswith(("http://", "https://"))
             if is_url:
-                local_path = wp.download_image(src, self._log_threadsafe)
+                local_path = wp.download_image(src, self._log_threadsafe,
+                                               cancel_event=self._cancel_event)
             else:
                 local_path = Path(src)
                 if not local_path.exists():
@@ -301,54 +297,14 @@ class App:
             self._load_preview()
 
     def _open_image_picker(self, title="Select image", initial_dir=None):
-        try:
-            return self._com_file_picker(title, initial_dir)
-        except Exception:
-            return filedialog.askopenfilename(
-                title=title,
-                filetypes=[
-                    ("Image files", "*.jpg *.jpeg *.png *.bmp *.gif *.webp *.tiff *.avif *.heic"),
-                    ("All files",   "*.*"),
-                ],
-                initialdir=initial_dir or str(Path.home()),
-            )
-
-    def _com_file_picker(self, title, initial_dir=None):
-        import ctypes
-        CLSID_FileOpenDialog = "{DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}"
-        ole32 = ctypes.windll.ole32
-        ole32.CoInitialize(None)
-        try:
-            import comtypes
-            import comtypes.client
-            from comtypes.shell import IFileOpenDialog, FOS_FORCEFILESYSTEM, FOS_FILEMUSTEXIST
-            dialog = comtypes.client.CreateObject(
-                CLSID_FileOpenDialog,
-                interface=comtypes.shell.IFileOpenDialog)
-            dialog.SetTitle(title)
-            opts = dialog.GetOptions()
-            dialog.SetOptions(opts | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST)
-            filters = [
-                ("Image files (jpg, png, bmp, gif, webp, tiff)",
-                 "*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.webp;*.tiff;*.tif;*.avif;*.heic"),
-                ("All files", "*.*"),
-            ]
-            dialog.SetFileTypes(filters)
-            dialog.SetFileTypeIndex(1)
-            if initial_dir and Path(initial_dir).exists():
-                from comtypes.shell import SHCreateItemFromParsingName, IShellItem
-                folder_item = SHCreateItemFromParsingName(
-                    str(initial_dir), None, IShellItem)
-                dialog.SetFolder(folder_item)
-            hr = dialog.Show(int(self.root.winfo_id()))
-            if hr != 0:
-                return None
-            result = dialog.GetResult()
-            return result.GetDisplayName(0x80058000)
-        except Exception:
-            raise
-        finally:
-            ole32.CoUninitialize()
+        return filedialog.askopenfilename(
+            title=title,
+            filetypes=[
+                ("Image files", "*.jpg *.jpeg *.png *.bmp *.gif *.webp *.tiff *.avif *.heic"),
+                ("All files",   "*.*"),
+            ],
+            initialdir=initial_dir or str(Path.home()),
+        )
 
     def _open_store_folder(self):
         STORE_DIR.mkdir(parents=True, exist_ok=True)
@@ -817,9 +773,10 @@ class App:
 
     def _do_set_lock_screen(self, img_path):
         try:
+            # launch_elevated waits for the elevated helper to exit, so the
+            # registry check below sees the helper's writes.
             if not wp.launch_elevated("set-lockscreen", str(img_path), self._log_threadsafe):
                 return
-            time.sleep(2)
             try:
                 import winreg
                 key = winreg.OpenKey(
@@ -857,7 +814,6 @@ class App:
         try:
             if not wp.launch_elevated("release-lockscreen", "", self._log_threadsafe):
                 return
-            time.sleep(2)
             import winreg
             try:
                 winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
@@ -874,23 +830,26 @@ class App:
     def _update_ls_btn(self):
         """Update the Personalize/Release button based on whether CSP is set."""
         try:
-            csp = wp.csp_is_set()
-            if csp:
+            # Reuse one Tooltip and update its text — creating a new Tooltip
+            # per refresh would leak instances.
+            if not hasattr(self, "_ls_pers_tip"):
+                self._ls_pers_tip = Tooltip(self._ls_pers_btn, "")
+            if wp.csp_is_set():
                 c = BTN_COLORS["danger"]
                 self._ls_pers_btn.config(
                     text="🔓 Release & Personalize",
                     bg=c["bg"], fg=c["fg"], activebackground=c["active"])
-                Tooltip(self._ls_pers_btn,
-                        "A custom lock screen image is active.\n"
-                        "Click to remove the policy (UAC prompt)\n"
-                        "then open Settings → Lock screen.")
+                self._ls_pers_tip.text = (
+                    "A custom lock screen image is active.\n"
+                    "Click to remove the policy (UAC prompt)\n"
+                    "then open Settings → Lock screen.")
             else:
                 c = BTN_COLORS["primary"]
                 self._ls_pers_btn.config(
                     text="⚙  Personalize Lock Screen",
                     bg=c["bg"], fg=c["fg"], activebackground=c["active"])
-                Tooltip(self._ls_pers_btn,
-                        "Open Settings → Personalization → Lock screen.")
+                self._ls_pers_tip.text = (
+                    "Open Settings → Personalization → Lock screen.")
         except Exception:
             pass
 
@@ -910,7 +869,6 @@ class App:
         try:
             if not wp.launch_elevated("release-lockscreen", "", self._log_threadsafe):
                 return
-            time.sleep(2)
             self._log_threadsafe("✔  Policy removed — opening Settings.", "green")
             self.root.after(0, self._open_lock_screen_settings)
             self.root.after(0, self._update_ls_btn)

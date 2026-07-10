@@ -5,13 +5,11 @@ Wallpaper apply, image download, lock screen, spotlight, registry helpers.
 from __future__ import annotations
 import re
 import shutil
-import threading
-import time
+import sys
 import urllib.request
 import urllib.parse
 import winreg
 import ctypes
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -19,12 +17,9 @@ from .constants import WALLPAPER_STYLES, STORE_DIR, HELPERS_DIR
 
 
 # ── Image file extensions we recognise ───────────────────────────────────────
+# No .svg — Windows cannot use vector images as wallpaper.
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
-              ".tiff", ".tif", ".avif", ".heic", ".svg"}
-
-
-
-import sys
+              ".tiff", ".tif", ".avif", ".heic"}
 
 
 def find_python_exe() -> str:
@@ -113,17 +108,33 @@ def apply_wallpaper(path: str, style: str):
         SPIF_UPDATEINIFILE | SPIF_SENDCHANGE)
 
 
-def download_image(url: str, log_fn) -> Path:
-    """Download a URL to a temp file in STORE_DIR. Returns Path."""
+def download_image(url: str, log_fn, cancel_event=None) -> Path:
+    """
+    Download a URL to a file in STORE_DIR. Returns Path.
+    Never overwrites an existing store file — appends a timestamp instead.
+    cancel_event: optional threading.Event; raises InterruptedError when set.
+    """
     log_fn(f"Downloading: {url}")
     parsed = urllib.parse.urlparse(url)
     name = Path(parsed.path).name or "wallpaper.jpg"
     name = re.sub(r'[<>:"/\\|?*]', "_", name)
+    STORE_DIR.mkdir(parents=True, exist_ok=True)
     dest = STORE_DIR / name
+    if dest.exists():
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = STORE_DIR / f"{dest.stem}_{ts}{dest.suffix}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     req = urllib.request.Request(url, headers=headers)
+    chunks = []
     with urllib.request.urlopen(req, timeout=30) as resp:
-        data = resp.read()
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError()
+            chunk = resp.read(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    data = b"".join(chunks)
     dest.write_bytes(data)
     log_fn(f"Downloaded {len(data)//1024} KB → {dest.name}")
     return dest
@@ -323,44 +334,69 @@ def _release_lockscreen_headless():
         import sys; sys.exit(1)
 
 
+class _SHELLEXECUTEINFOW(ctypes.Structure):
+    _fields_ = [
+        ("cbSize",         ctypes.c_uint32),
+        ("fMask",          ctypes.c_ulong),
+        ("hwnd",           ctypes.c_void_p),
+        ("lpVerb",         ctypes.c_wchar_p),
+        ("lpFile",         ctypes.c_wchar_p),
+        ("lpParameters",   ctypes.c_wchar_p),
+        ("lpDirectory",    ctypes.c_wchar_p),
+        ("nShow",          ctypes.c_int),
+        ("hInstApp",       ctypes.c_void_p),
+        ("lpIDList",       ctypes.c_void_p),
+        ("lpClass",        ctypes.c_wchar_p),
+        ("hkeyClass",      ctypes.c_void_p),
+        ("dwHotKey",       ctypes.c_uint32),
+        ("hIconOrMonitor", ctypes.c_void_p),
+        ("hProcess",       ctypes.c_void_p),
+    ]
+
+
 def launch_elevated(mode: str, img_path: str, log_fn) -> bool:
     """
     Re-launch THIS EXE (or pyw) elevated via UAC with --set-lockscreen or
-    --release-lockscreen. No external Python or helper script needed.
+    --release-lockscreen, and WAIT for the helper to finish (including the
+    time the user spends on the UAC prompt) so callers can verify the
+    registry immediately after this returns True.
     """
     if getattr(sys, "frozen", False):
-        exe = sys.executable
+        exe  = sys.executable
         args = '"--{}" "{}"'.format(mode, img_path) if img_path else '"--{}"'.format(mode)
-        ret = ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", exe, args, str(Path(exe).parent), 0)
+        workdir = str(Path(exe).parent)
     else:
-        from .wallpaper import find_python_exe  # noqa — self ref ok
-        py  = find_python_exe()
+        exe = find_python_exe()
         pyw = str(Path(sys.argv[0]).resolve())
         args = '"{}" "--{}" "{}"'.format(pyw, mode, img_path) if img_path \
                else '"{}" "--{}"'.format(pyw, mode)
-        ret = ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", py, args, str(Path(pyw).parent), 0)
+        workdir = str(Path(pyw).parent)
 
-    if ret <= 32:
-        if ret == 5:
+    SEE_MASK_NOCLOSEPROCESS = 0x40
+    shell32  = ctypes.WinDLL("shell32",  use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    info = _SHELLEXECUTEINFOW()
+    info.cbSize       = ctypes.sizeof(info)
+    info.fMask        = SEE_MASK_NOCLOSEPROCESS
+    info.lpVerb       = "runas"
+    info.lpFile       = exe
+    info.lpParameters = args
+    info.lpDirectory  = workdir
+    info.nShow        = 0
+
+    if not shell32.ShellExecuteExW(ctypes.byref(info)):
+        err = ctypes.get_last_error()
+        if err == 1223:     # ERROR_CANCELLED — user declined the UAC prompt
             log_fn("◼  UAC cancelled.")
         else:
-            log_fn("✖  Elevation failed (code {}).".format(ret))
+            log_fn("✖  Elevation failed (error {}).".format(err))
         return False
+
+    if info.hProcess:
+        kernel32.WaitForSingleObject(info.hProcess, 120_000)   # 2 min max
+        kernel32.CloseHandle(info.hProcess)
     return True
-
-
-# Keep old name as alias so callers don't break
-def write_lockscreen_helper(img_path=None, mode="set"):
-    """Deprecated — returns None. Elevation now done via launch_elevated()."""
-    return None
-
-
-def launch_helper_elevated(helper, log_fn) -> bool:
-    """Deprecated alias — calls launch_elevated() instead."""
-    mode = "release-lockscreen" if helper is None else "set-lockscreen"
-    return launch_elevated(mode, "", log_fn)
 
 
 def find_current_lock_screen_image() -> tuple[str | None, str]:
@@ -385,12 +421,7 @@ def find_current_lock_screen_image() -> tuple[str | None, str]:
     except Exception:
         pass
 
-    # 2. Windows Themes cached wallpaper paths (Picture mode)
-    cached_paths = [
-        Path.home() / "AppData/Local/Microsoft/Windows/SystemData",
-        Path.home() / "AppData/Roaming/Microsoft/Windows/Themes/CachedFiles",
-    ]
-    # SystemData has per-user lock screen in subdirs
+    # 2. SystemData has per-user lock screen images in subdirs (Picture mode)
     system_data = Path.home() / "AppData/Local/Microsoft/Windows/SystemData"
     if system_data.exists():
         try:

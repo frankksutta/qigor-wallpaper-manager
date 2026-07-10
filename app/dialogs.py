@@ -1,6 +1,6 @@
 """
 dialogs.py  —  QiGor Wallpaper Manager
-AboutDialog, ErrorDialog, _InputDialog, _RenameDialog.
+AboutDialog, _InputDialog, _RenameDialog.
 """
 import sys
 import tkinter as tk
@@ -116,9 +116,9 @@ class AboutDialog(tk.Toplevel):
             "• The preview info bar shows your image resolution vs your "
             "screen's native resolution and a quality rating:\n"
             "  ✔ native or better  — sharp at any size\n"
-            "  ≈ slight upscale    — 75–100%% of screen (barely noticeable)\n"
-            "  ⚠ upscaled ~2×     — 50–75%% of screen (slightly soft)\n"
-            "  ⚠⚠ heavily upscaled — under 50%% of screen (visibly blurry)\n\n"
+            "  ≈ slight upscale    — 75–100% of screen (barely noticeable)\n"
+            "  ⚠ upscaled ~2×     — 50–75% of screen (slightly soft)\n"
+            "  ⚠⚠ heavily upscaled — under 50% of screen (visibly blurry)\n\n"
 
             "• Lock screen uses the Windows PersonalizationCSP registry key "
             "(available since Windows 10 version 1607). Requires a one-time "
@@ -141,44 +141,6 @@ class AboutDialog(tk.Toplevel):
 
         self.bind("<Escape>", lambda _: self.destroy())
         self.bind("<Return>", lambda _: self.destroy())
-
-
-class ErrorDialog(tk.Toplevel):
-    """Scrollable, copyable error dialog. Use instead of messagebox for long traces."""
-
-    def __init__(self, parent, title, detail, theme_name="dark", font_size=10):
-        super().__init__(parent)
-        self.title(title)
-        t = THEMES.get(theme_name, THEMES["dark"])
-        self.configure(bg=t["bg"])
-        self.resizable(True, True)
-        self.minsize(480, 300)
-        self.geometry("640x380")
-        self.grab_set()
-        fn  = ("Consolas", font_size)
-        fnb = ("Segoe UI", font_size, "bold")
-
-        ttk.Sizegrip(self).place(relx=1.0, rely=1.0, anchor="se")
-
-        btn_row = tk.Frame(self, bg=t["bg"])
-        btn_row.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(4, 12))
-        c = BTN_COLORS["primary"]
-        tk.Button(btn_row, text="Copy to Clipboard", font=fnb,
-                  bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-                  command=lambda: (self.clipboard_clear(),
-                                   self.clipboard_append(detail))
-                  ).pack(side=tk.LEFT, padx=(0, 8))
-        tk.Button(btn_row, text="Close", font=fnb,
-                  bg=t["btn_bg"], fg=t["btn_fg"],
-                  command=self.destroy).pack(side=tk.LEFT)
-
-        txt = scrolledtext.ScrolledText(self, font=fn, wrap=tk.WORD,
-                                        bg=t["entry_bg"],
-                                        fg=CONSOLE_COLORS[theme_name]["red"])
-        txt.pack(fill=tk.BOTH, expand=True, padx=12, pady=(12, 4))
-        txt.insert(tk.END, detail)
-        txt.config(state=tk.DISABLED)
-        self.bind("<Escape>", lambda _: self.destroy())
 
 
 class _InputDialog(tk.Toplevel):

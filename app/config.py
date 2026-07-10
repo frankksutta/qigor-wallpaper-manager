@@ -2,6 +2,7 @@
 config.py  —  QiGor Wallpaper Manager
 JSON-backed settings persisted to ~/.qigor-wallpaper/config.json.
 """
+import copy
 import json
 from pathlib import Path
 from .constants import APP_SLUG
@@ -41,12 +42,15 @@ class Config:
         self.data  = self._load()
 
     def _load(self):
+        # deepcopy — callers mutate list values (history, favorites) in place;
+        # a shallow copy would let that corrupt the class-level DEFAULTS.
         try:
             if self._file.exists():
-                return {**self.DEFAULTS, **json.loads(self._file.read_text("utf-8"))}
+                return {**copy.deepcopy(self.DEFAULTS),
+                        **json.loads(self._file.read_text("utf-8"))}
         except Exception:
             pass
-        return self.DEFAULTS.copy()
+        return copy.deepcopy(self.DEFAULTS)
 
     def save(self):
         self._dir.mkdir(parents=True, exist_ok=True)

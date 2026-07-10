@@ -48,21 +48,37 @@ _lock_dir.mkdir(parents=True, exist_ok=True)
 _lock_file = _lock_dir / "instance.lock"
 
 try:
-    _lock_fd = open(_lock_file, "w")
+    # "a+" — do NOT truncate: the running instance's PID must survive a failed
+    # lock attempt. Lock byte 0 (msvcrt.locking uses the current position).
+    _lock_fd = open(_lock_file, "a+")
     import msvcrt
+    _lock_fd.seek(0)
     msvcrt.locking(_lock_fd.fileno(), msvcrt.LK_NBLCK, 1)
+    _lock_fd.truncate(0)
     _lock_fd.write(str(os.getpid()))
     _lock_fd.flush()
 except (IOError, OSError):
-    _hwnd = 0
-    for _title in [f"{APP_NAME}  v{APP_VERSION}",
-                   f"{APP_NAME}  v{APP_VERSION}  [Administrator]"]:
-        _hwnd = _ct.windll.user32.FindWindowW(None, _title)
-        if _hwnd:
-            break
-    if _hwnd:
-        _ct.windll.user32.ShowWindow(_hwnd, 9)
-        _ct.windll.user32.SetForegroundWindow(_hwnd)
+    # Another instance is running — find its window by title prefix.
+    # The full title includes the build number ("... v0.7  build 0.7.3"),
+    # so an exact FindWindowW match would go stale on every patch.
+    _title_prefix = f"{APP_NAME}  v"
+    _found = []
+
+    @_ct.WINFUNCTYPE(_ct.c_int, _ct.c_void_p, _ct.c_void_p)
+    def _enum_cb(hwnd, _lparam):
+        n = _ct.windll.user32.GetWindowTextLengthW(hwnd)
+        if n:
+            buf = _ct.create_unicode_buffer(n + 1)
+            _ct.windll.user32.GetWindowTextW(hwnd, buf, n + 1)
+            if buf.value.startswith(_title_prefix):
+                _found.append(hwnd)
+                return 0    # stop enumeration
+        return 1
+
+    _ct.windll.user32.EnumWindows(_enum_cb, 0)
+    if _found:
+        _ct.windll.user32.ShowWindow(_found[0], 9)
+        _ct.windll.user32.SetForegroundWindow(_found[0])
     sys.exit(0)
 
 # ── GUI mode ──────────────────────────────────────────────────────────────────
@@ -111,6 +127,7 @@ root.mainloop()
 # ── Release lock on clean exit ────────────────────────────────────────────────
 try:
     import msvcrt
+    _lock_fd.seek(0)    # unlock the same byte range that was locked
     msvcrt.locking(_lock_fd.fileno(), msvcrt.LK_UNLCK, 1)
     _lock_fd.close()
     _lock_file.unlink(missing_ok=True)
