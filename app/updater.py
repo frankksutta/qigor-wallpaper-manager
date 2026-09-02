@@ -37,7 +37,7 @@ from . import scaling
 
 from .constants import (APP_NAME, APP_BUILD, RELEASE_BASE, RELEASE_PAGE,
                         SETUP_ASSET, MANIFEST_ASSET, UPDATE_INTERVAL_HOURS,
-                        THEMES, BTN_COLORS, CONSOLE_COLORS)
+                        THEMES, BTN_COLORS, CONSOLE_COLORS, mark_role)
 
 USER_AGENT = "{}/{} (+{})".format(APP_NAME.replace(" ", ""), APP_BUILD, RELEASE_PAGE)
 NET_TIMEOUT = 15
@@ -307,9 +307,10 @@ class UpdateDialog(tk.Toplevel):
                               anchor="w")
         self._head.pack(fill="x", pady=(18, 4), **pad)
 
-        self._sub = tk.Label(self, text="Installed build {}".format(APP_BUILD),
+        self._sub = mark_role(tk.Label(self,
+                             text="Installed build {}".format(APP_BUILD),
                              bg=t["bg"], fg=dim, font=scaling.font("Segoe UI", 9),
-                             anchor="w")
+                             anchor="w"), "dim")
         self._sub.pack(fill="x", **pad)
 
         self._notes = tk.Text(self, bg=t["console_bg"], fg=t["console_fg"],
@@ -319,8 +320,8 @@ class UpdateDialog(tk.Toplevel):
         self._notes.configure(state="disabled")
 
         self._bar = ttk.Progressbar(self, mode="determinate", maximum=1000)
-        self._pct = tk.Label(self, text="", bg=t["bg"], fg=dim,
-                             font=scaling.font("Segoe UI", 9), anchor="w")
+        self._pct = mark_role(tk.Label(self, text="", bg=t["bg"], fg=dim,
+                             font=scaling.font("Segoe UI", 9), anchor="w"), "dim")
 
         self._auto = tk.BooleanVar(value=bool(app.cfg.get("update_check_enabled")))
         tk.Checkbutton(self, text="Check for updates automatically",

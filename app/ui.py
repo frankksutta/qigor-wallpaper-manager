@@ -7,7 +7,8 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext
 
 from .constants import (APP_NAME, APP_VERSION, THEMES, BTN_COLORS,
-                        CONSOLE_COLORS, WALLPAPER_STYLES, STORE_DIR)
+                        CONSOLE_COLORS, WALLPAPER_STYLES, STORE_DIR,
+                        mark_role)
 from . import scaling
 from .tooltip import Tooltip
 from .slideshow import SlideshowPanel
@@ -36,13 +37,13 @@ def _build_lock_tab(app, parent):
 
     tk.Label(body, text="Windows Lock Screen", anchor=tk.W,
              font=scaling.font("Segoe UI", 12, "bold")).pack(fill=tk.X)
-    tk.Label(body, anchor=tk.W, justify=tk.LEFT, wraplength=640, fg=dim,
+    mark_role(tk.Label(body, anchor=tk.W, justify=tk.LEFT, wraplength=640, fg=dim,
              font=scaling.font("Segoe UI", 9),
              text="Sets the image Windows shows before you sign in. This is a "
                   "machine-wide policy, so Windows asks for permission (UAC) "
                   "each time it changes — the app stays open while a small "
                   "helper applies it and exits."
-             ).pack(fill=tk.X, pady=(2, 12))
+             ), "dim").pack(fill=tk.X, pady=(2, 12))
 
     sel = tk.LabelFrame(body, text="  Image to apply  ")
     sel.pack(fill=tk.X, pady=(0, 12))
@@ -60,9 +61,9 @@ def _build_lock_tab(app, parent):
     tk.Label(sel, textvariable=app._lock_sel_var, anchor=tk.W, justify=tk.LEFT,
              wraplength=620, font=scaling.font("Consolas", 9)
              ).pack(fill=tk.X, padx=8, pady=6)
-    tk.Label(sel, anchor=tk.W, fg=dim, font=scaling.font("Segoe UI", 8),
+    mark_role(tk.Label(sel, anchor=tk.W, fg=dim, font=scaling.font("Segoe UI", 8),
              text="Chosen on the Wallpaper tab — drop a file, paste a URL, or Browse."
-             ).pack(fill=tk.X, padx=8, pady=(0, 6))
+             ), "dim").pack(fill=tk.X, padx=8, pady=(0, 6))
 
     row = tk.Frame(body)
     row.pack(fill=tk.X)

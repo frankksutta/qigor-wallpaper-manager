@@ -6,7 +6,7 @@ from pathlib import Path
 
 APP_NAME    = "QiGor Wallpaper Manager"
 APP_VERSION = "0.8"
-APP_BUILD   = "0.8.2"   # bump this every patch
+APP_BUILD   = "0.8.3"   # bump this every patch
 APP_SLUG    = "qigor-wallpaper"
 RECENT_MAX  = 8
 
@@ -129,3 +129,36 @@ CONSOLE_COLORS = {
         "bold":    "#111111",
     },
 }
+
+
+# ── Semantic label colours ────────────────────────────────────────────────────
+# A Label built with fg=CONSOLE_COLORS[...]["dim"] loses that colour as soon as
+# the app's recursive theme pass paints every Label with the plain foreground —
+# and that pass runs at startup, not only on a toggle, so hint text was never
+# actually dim. Marking a widget with the palette role its foreground came from
+# lets the pass re-derive the right colour for whichever theme is now current,
+# instead of every panel having to track its own labels.
+ROLE_ATTR = "_qigor_role"
+
+
+def mark_role(widget, role: str):
+    """Tag a widget with the CONSOLE_COLORS role its foreground came from."""
+    setattr(widget, ROLE_ATTR, role)
+    return widget
+
+
+def role_fg(widget, theme_name: str, default: str) -> str:
+    """The foreground a tagged widget wants in `theme_name`; `default` if untagged."""
+    role = getattr(widget, ROLE_ATTR, None)
+    if role is None:
+        return default
+    palette = CONSOLE_COLORS.get(theme_name, CONSOLE_COLORS["dark"])
+    return palette.get(role, default)
+
+
+def paint_role(widget, role: str, theme_name: str):
+    """Tag a widget and immediately paint it in that role's colour."""
+    mark_role(widget, role)
+    widget.configure(fg=CONSOLE_COLORS.get(
+        theme_name, CONSOLE_COLORS["dark"]).get(role, widget.cget("fg")))
+    return widget

@@ -16,7 +16,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
 from .constants import (APP_NAME, APP_VERSION, APP_BUILD, STORE_DIR, HELPERS_DIR,
-                        THEMES, BTN_COLORS, CONSOLE_COLORS, WIN_IMAGE_SOURCES)
+                        THEMES, BTN_COLORS, CONSOLE_COLORS, WIN_IMAGE_SOURCES,
+                        role_fg)
 from . import scaling
 from .config import Config
 from .tooltip import Tooltip
@@ -1219,8 +1220,9 @@ class App:
             self.console.tag_configure(tag, foreground=color)
         self.console.tag_configure("default", foreground=t["console_fg"])
         self._apply_theme_recursive(self.root, t)
-        # The recursive pass paints every Label with the plain foreground, which
-        # flattens the panels' status colours. They re-assert their own.
+        # Tagged labels come out of the recursive pass with the right colour for
+        # the new theme. The panels still get a nudge: their status lines carry a
+        # colour that depends on what the scheduler says, not just on the theme.
         for panel in ("_slideshow_panel", "_reminder_panel"):
             p = getattr(self, panel, None)
             if p is not None and hasattr(p, "retheme"):
@@ -1334,7 +1336,11 @@ class App:
                 # dark theme, which is what made every pane heading unreadable.
                 widget.configure(bg=t["bg"], fg=t["fg"])
             elif wtype == "Label":
-                widget.configure(bg=t["bg"], fg=t["fg"])
+                # Hint text, status lines and the like keep their palette role
+                # rather than being flattened to the plain foreground — and the
+                # role is re-resolved, so dim reads correctly in both themes.
+                widget.configure(bg=t["bg"],
+                                 fg=role_fg(widget, self.theme_name, t["fg"]))
             elif wtype == "Entry":
                 if self._valid.get(widget, True):
                     widget.configure(bg=t["entry_bg"], fg=t["entry_fg"],

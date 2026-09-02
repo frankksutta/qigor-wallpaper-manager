@@ -18,7 +18,9 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from pathlib import Path
 
-from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR, WALLPAPER_STYLES, HELPERS_DIR, APP_BUILD
+from .constants import (THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR,
+                        WALLPAPER_STYLES, HELPERS_DIR, APP_BUILD,
+                        mark_role, paint_role)
 from .wallpaper import find_python_exe
 from . import scaling
 from .tooltip import Tooltip
@@ -568,28 +570,30 @@ class SlideshowPanel(tk.Frame):
 
         tk.Label(body, text="Wallpaper Slideshow", font=fnb,
                  bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
-        tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=460,
+        mark_role(tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=460,
                  text="Automatically rotates through images in the selected folder "
-                      "using Windows Task Scheduler. No background process.").pack(
-                          anchor=tk.W, pady=(2, 8))
+                      "using Windows Task Scheduler. No background process."),
+                  "dim").pack(anchor=tk.W, pady=(2, 8))
 
         # Status label — populated immediately with a placeholder, then updated
         # from a background thread so the dialog opens instantly (schtasks /query
         # can block the main thread for several seconds).
         self._status_var = tk.StringVar(value="Checking scheduler status…")
-        self._status_label = tk.Label(body, textvariable=self._status_var, font=fns,
+        self._status_label = mark_role(tk.Label(body,
+                 textvariable=self._status_var, font=fns,
                  bg=t["bg"], fg=CONSOLE_COLORS[theme_name]["yellow"],
-                 wraplength=460, justify=tk.LEFT)
+                 wraplength=460, justify=tk.LEFT), "yellow")
         self._status_label.pack(anchor=tk.W, pady=(0, 6))
         self._theme_name = theme_name
 
         self._refresh_status()
 
         if state.get("last_file"):
-            tk.Label(body,
+            mark_role(tk.Label(body,
                      text="Last set: {}  ({})".format(
                          state["last_file"], state.get("last_set", "?")),
-                     font=fns, bg=t["bg"], fg=dim).pack(anchor=tk.W, pady=(0, 6))
+                     font=fns, bg=t["bg"], fg=dim),
+                     "dim").pack(anchor=tk.W, pady=(0, 6))
 
         ttk.Separator(body).pack(fill=tk.X, pady=(0, 8))
 
@@ -610,8 +614,9 @@ class SlideshowPanel(tk.Frame):
 
         self._count_var = tk.StringVar()
         self._update_count()
-        tk.Label(body, textvariable=self._count_var,
-                 font=fns, bg=t["bg"], fg=dim).pack(anchor=tk.W, pady=(0, 6))
+        mark_role(tk.Label(body, textvariable=self._count_var,
+                 font=fns, bg=t["bg"], fg=dim),
+                 "dim").pack(anchor=tk.W, pady=(0, 6))
         self._folder_var.trace_add("write", lambda *_: self._update_count())
 
         # Interval
@@ -648,9 +653,10 @@ class SlideshowPanel(tk.Frame):
             selectcolor=t["entry_bg"],
             activebackground=t["bg"]).pack(anchor=tk.W, pady=(0, 8))
 
-        tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=460,
+        mark_role(tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=460,
                  text="Tip: images are added to the pool automatically "
-                      "whenever you save a wallpaper to the store.").pack(anchor=tk.W)
+                      "whenever you save a wallpaper to the store."),
+                  "dim").pack(anchor=tk.W)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -676,25 +682,27 @@ class SlideshowPanel(tk.Frame):
         theme_name = self._theme_name
 
         def _fetch():
+            # The status carries a palette role, not a resolved colour: the user
+            # can flip the theme while this schtasks query is still running.
             scheduled = is_scheduled()
             status    = query_task_status()
             if scheduled:
                 overdue, _desc = slideshow_is_overdue()
                 if overdue:
                     status_str = status + "\n⚠ Slideshow overdue — click ▶ Start to re-register."
-                    color = CONSOLE_COLORS[theme_name]["yellow"]
+                    role = "yellow"
                 else:
                     status_str = status
-                    color = CONSOLE_COLORS[theme_name]["green"]
+                    role = "green"
             else:
                 status_str = status
-                color = CONSOLE_COLORS[theme_name]["yellow"]
+                role = "yellow"
             # Dialog may be destroyed while the schtasks query was running —
             # both scheduling the callback and the callback itself must cope.
-            def _apply(s=scheduled, st=status_str, c=color):
+            def _apply(s=scheduled, st=status_str, r=role):
                 try:
                     self._status_var.set(st)
-                    self._status_label.config(fg=c)
+                    paint_role(self._status_label, r, self._theme_name)
                     self._set_running_state(s)
                 except tk.TclError:
                     pass

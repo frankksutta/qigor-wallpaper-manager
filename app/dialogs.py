@@ -6,7 +6,8 @@ import sys
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 
-from .constants import APP_NAME, APP_VERSION, THEMES, BTN_COLORS, CONSOLE_COLORS
+from .constants import (APP_NAME, APP_VERSION, THEMES, BTN_COLORS,
+                        CONSOLE_COLORS, mark_role)
 from . import scaling
 
 
@@ -57,9 +58,11 @@ class AboutDialog(tk.Toplevel):
 
         tk.Label(body, text=APP_NAME, font=fnb,
                  bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
-        tk.Label(body, text=f"Version {APP_VERSION}  •  Python {sys.version.split()[0]}",
+        mark_role(tk.Label(body,
+                 text=f"Version {APP_VERSION}  •  Python {sys.version.split()[0]}",
                  font=fns, bg=t["bg"],
-                 fg=CONSOLE_COLORS[theme_name]["dim"]).pack(anchor=tk.W, pady=(2, 12))
+                 fg=CONSOLE_COLORS[theme_name]["dim"]),
+                  "dim").pack(anchor=tk.W, pady=(2, 12))
 
         desc = (
             "Your desktop, your way — without digging through Settings.\n\n"

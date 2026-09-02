@@ -11,7 +11,8 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 from pathlib import Path
 
-from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, HELPERS_DIR
+from .constants import (THEMES, BTN_COLORS, CONSOLE_COLORS, HELPERS_DIR,
+                        mark_role, paint_role)
 from . import scaling
 
 
@@ -87,33 +88,34 @@ class ReminderPanel(tk.Frame):
 
         tk.Label(body, font=fnb, bg=t["bg"], fg=t["fg"],
                  text="Schedule a gentle wallpaper change reminder").pack(anchor=tk.W)
-        tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=440,
+        mark_role(tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=440,
                  text="A quiet Windows notification will appear in the bottom-right corner "
                       "at your chosen time. It auto-dismisses after ~5 seconds and sits "
-                      "in Action Center — won't interrupt your work.").pack(
-                          anchor=tk.W, pady=(2, 6))
+                      "in Action Center — won't interrupt your work."),
+                  "dim").pack(anchor=tk.W, pady=(2, 6))
 
         # Status label — show placeholder immediately, populate from background
         # thread so the dialog opens instantly (schtasks /query can block for
         # several seconds).
         self._status_label_var = tk.StringVar(value="Checking scheduler status…")
-        self._status_label_widget = tk.Label(
+        self._status_label_widget = mark_role(tk.Label(
             body, textvariable=self._status_label_var, font=fns,
             bg=t["bg"], fg=CONSOLE_COLORS[theme_name]["yellow"],
-            wraplength=440, justify=tk.LEFT)
+            wraplength=440, justify=tk.LEFT), "yellow")
         self._status_label_widget.pack(anchor=tk.W, pady=(0, 8))
 
         def _fetch_status():
+            # A palette role, not a resolved colour — the user can flip the
+            # theme while this schtasks query is still running.
             status = self._query_task_status()
-            color = (CONSOLE_COLORS[theme_name]["green"] if "Ready" in status
-                     else CONSOLE_COLORS[theme_name]["yellow"])
+            role = "green" if "Ready" in status else "yellow"
 
             # Dialog may be destroyed while the schtasks query was running —
             # both scheduling the callback and the callback itself must cope.
             def _apply():
                 try:
                     self._status_label_var.set(status)
-                    self._status_label_widget.config(fg=color)
+                    paint_role(self._status_label_widget, role, self._theme)
                 except tk.TclError:
                     pass
             try:
@@ -156,6 +158,10 @@ class ReminderPanel(tk.Frame):
 
         time_row = tk.Frame(body, bg=t["bg"])
         time_row.pack(fill=tk.X, pady=(0, 8))
+        # Day / Every-N are packed and unpacked as the frequency changes, and
+        # pack() appends — without an anchor to sit in front of, the row they
+        # belong between ends up below the separator at the foot of the panel.
+        self._rows_before = time_row
         tk.Label(time_row, text="At time:", font=fnb,
                  bg=t["bg"], fg=t["fg"], width=12, anchor=tk.W).pack(side=tk.LEFT)
         self._hour_var = tk.StringVar(value=saved_hour)
@@ -171,17 +177,19 @@ class ReminderPanel(tk.Frame):
         ttk.Separator(body).pack(fill=tk.X, pady=(8, 6))
         winotify_ok = self._check_winotify()
         if winotify_ok:
-            dep_color = CONSOLE_COLORS[theme_name]["green"]
+            dep_role  = "green"
             dep_text  = "✔  winotify installed — toast notifications ready."
         else:
-            dep_color = CONSOLE_COLORS[theme_name]["yellow"]
+            dep_role  = "yellow"
             dep_text  = ("⚠  winotify not installed — toast will not appear.\n\n"
                          "Fix:  open a command prompt and run:\n"
                          "      pip install winotify\n\n"
                          "You can still schedule the task now; install winotify before\n"
                          "the reminder fires and it will work.")
-        tk.Label(body, text=dep_text, font=fns, bg=t["bg"], fg=dep_color,
-                 wraplength=440, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 4))
+        mark_role(tk.Label(body, text=dep_text, font=fns, bg=t["bg"],
+                 fg=CONSOLE_COLORS[theme_name][dep_role],
+                 wraplength=440, justify=tk.LEFT),
+                  dep_role).pack(anchor=tk.W, pady=(0, 4))
 
         self._on_freq_change()
 
@@ -228,11 +236,11 @@ class ReminderPanel(tk.Frame):
     def _on_freq_change(self):
         freq = self._freq_var.get()
         if freq == "weekly":
-            self._dow_row.pack(fill=tk.X, pady=(0, 8))
+            self._dow_row.pack(fill=tk.X, pady=(0, 8), before=self._rows_before)
             self._cust_row.pack_forget()
         elif freq == "custom":
             self._dow_row.pack_forget()
-            self._cust_row.pack(fill=tk.X, pady=(0, 8))
+            self._cust_row.pack(fill=tk.X, pady=(0, 8), before=self._rows_before)
         else:
             self._dow_row.pack_forget()
             self._cust_row.pack_forget()
