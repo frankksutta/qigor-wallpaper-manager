@@ -1,9 +1,8 @@
-QiGor is now a proper installed app rather than a folder you keep somewhere.
+The slideshow stops being one folder at a time.
 
-- Installs to your user account, with a Start Menu entry, an optional desktop shortcut, and an Uninstall entry in Settings ▸ Apps. No administrator password.
-- `QiGor-Setup.cmd` downloads, verifies and installs in one double-click, so there is no zip to unpack or keep track of. It checks the published version first and transfers about a kilobyte — not the whole installer — if you already have the latest build.
-- Built-in updates: QiGor checks once a day, shows what changed, and verifies the download against a published checksum before replacing anything.
-- Upgrading from an older copy takes over its slideshow and reminder schedules, keeping your intervals, and tells you where the old folder is.
-- Uninstall from Settings ▸ Apps, from Help ▸ Uninstall inside the app, or with `winget uninstall`. It asks a running copy to close first, so it can never half-remove itself.
-- Every install and uninstall is written to `%USERPROFILE%\.qigor-wallpaper\install_log.txt`, so a window that closes too fast is no longer the end of the story.
-- No unsigned `.exe` anywhere, so Smart App Control has nothing to block. Everything that runs is signed by the Python Software Foundation or by Microsoft.
+- **Playlists.** Name a set of images from your store — one for work, one for the weekend — and point the slideshow at that instead of a whole folder. The new Playlists tab has your store on one side and the playlist on the other, with a thumbnail of whatever you click. Changes save as you make them, and a playlist the slideshow is already using picks them up at its next image.
+- **Quick preview.** See how a folder or playlist looks without waiting out the interval: the same rotation, 5 to 100 seconds apart, running while QiGor is open. It leaves the scheduled slideshow's place in its queue exactly where it was, and can put your wallpaper back when it stops.
+- **Subfolders.** A slideshow folder can now include everything below it, so a collection sorted into themes plays as one. The image store understands its own subfolders too, and a **Default store** button brings the folder box back home after you have browsed elsewhere.
+- **Import a gallery.** Select a gallery URL and press Import: QiGor finds the images on the page, offers a folder in your store named after the gallery, and downloads them. Thumbnails are left behind, anything already saved is skipped, and Esc stops it. Archive.org galleries are read from their file list rather than scraped, so nothing extra comes along.
+- **The slideshow log prints into the log console** instead of opening a window over it, coloured by what each line says. It keeps itself trimmed, so there is nothing left to clear.
+- **Fixed:** dropping a gallery link on *Add URL* said it could not resolve the item and added nothing. It now saves the page, and names the favourite after the gallery rather than after the website.
