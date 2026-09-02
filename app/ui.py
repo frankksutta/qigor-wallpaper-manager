@@ -16,7 +16,7 @@ from .reminder import ReminderPanel
 from . import dnd as dnd_mod
 
 try:
-    from PIL import ImageTk
+    from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -297,7 +297,7 @@ def build_ui(app):
                          "Scales the whole window, not just the console.")
 
     c = BTN_COLORS["primary"]
-    open_store_btn = tk.Button(toolbar, text="📁 Open Store Folder",
+    open_store_btn = tk.Button(toolbar, text="📁 Image store",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
               command=app._open_store_folder)
     open_store_btn.pack(side=tk.LEFT, padx=(8, 2))
@@ -318,6 +318,30 @@ def build_ui(app):
             "• Spotlight daily images\n"
             "• Built-in Windows wallpapers\n"
             "• Lock screen images")
+
+    # ── Hero image, right end of the toolbar ──────────────────────────────────
+    # It used to sit in the drop zone, over the dead space at its top-left.
+    # Scaled to the height of the buttons beside it so the toolbar does not
+    # grow: a full-size 150x84 here would cost the left column ~50px of the
+    # height it needs to fit without a scrollbar.
+    app._hero_photo = None
+    if PIL_AVAILABLE:
+        try:
+            from .images import load_bundled_image
+            hero = load_bundled_image("qigor_wallpaper_manager_thumb.jpg")
+            if hero:
+                toolbar.update_idletasks()
+                bar_h = max([b.winfo_reqheight() for b in toolbar.winfo_children()]
+                            or [28])
+                w = max(1, round(hero.width * bar_h / hero.height))
+                hero = hero.resize((w, bar_h), Image.LANCZOS)
+                app._hero_photo = ImageTk.PhotoImage(hero)
+                hero_lbl = tk.Label(toolbar, image=app._hero_photo,
+                                    bd=0, relief=tk.FLAT)
+                hero_lbl.pack(side=tk.RIGHT, padx=(8, 0))
+                Tooltip(hero_lbl, APP_NAME)
+        except Exception:
+            pass
 
     # Reminder and Slideshow are tabs of their own now, and each carries its
     # own ✔ when active — a button that only selected the tab beside it was
@@ -414,31 +438,17 @@ def build_ui(app):
              "or paste a URL / image address below",
         # 3 lines of text in a 5-line box: still a generous drop target, but
         # the column now fits the default window without a scrollbar.
-        height=5, relief=tk.RIDGE, cursor="hand2",
+        # No cursor="hand2" and no <Button-1>: clicking here used to open a
+        # file browser, which is a whole Explorer window for a stray click on
+        # what is meant to be a drop target. Browse... is the way in.
+        height=5, relief=tk.RIDGE,
         font=scaling.font("Segoe UI", 10))
     app._drop_label.pack(fill=tk.X, padx=6, pady=(6, 4))
-    app._drop_label.bind("<Button-1>", lambda _: app._browse_image())
     Tooltip(app._drop_label,
             "• Drag an image file from Windows Explorer\n"
             "• Drag an image directly from a browser page\n"
             "• Right-click an image → Copy image address, paste below\n"
-            "• Click to open a file browser")
-
-    # ── Drop zone thumbnail (upper-left dead area) ────────────────────────────
-    app._drop_thumb_photo = None
-    if PIL_AVAILABLE:
-        try:
-            from .images import load_bundled_image
-            thumb = load_bundled_image("qigor_wallpaper_manager_thumb.jpg")
-            if thumb:
-                app._drop_thumb_photo = ImageTk.PhotoImage(thumb)
-                thumb_lbl = tk.Label(drop_frame, image=app._drop_thumb_photo,
-                                     bd=0, relief=tk.FLAT, cursor="hand2")
-                thumb_lbl.place(x=7, y=6)
-                thumb_lbl.bind("<Button-1>", lambda _: app._browse_image())
-                Tooltip(thumb_lbl, f"{APP_NAME}  —  click to browse")
-        except Exception:
-            pass
+            "• Or use Browse… to pick a file")
 
     # ── DnD registration ──────────────────────────────────────────────────────
     app._dnd_msgs = []
@@ -649,11 +659,6 @@ def build_ui(app):
 
 
 
-    # ── Gallery URLs tab ──────────────────────────────────────────────────────
-    gallery_tab = tk.Frame(app._notebook)
-    app._notebook.add(gallery_tab, text="  🌐  Gallery URLs  ")
-    _build_gallery_tab(app, gallery_tab)
-
     # ── Lock Screen tab ───────────────────────────────────────────────────────
     lock_tab = tk.Frame(app._notebook)
     app._notebook.add(lock_tab, text="  🔒  Lock Screen  ")
@@ -670,6 +675,11 @@ def build_ui(app):
     app._reminder_panel = ReminderPanel(app._notebook, app.cfg, app.theme_name,
                                         on_result=app._on_reminder_result)
     app._notebook.add(app._reminder_panel, text="  ⏰  Reminder  ")
+
+    # ── Gallery URLs tab ──────────────────────────────────────────────────────
+    gallery_tab = tk.Frame(app._notebook)
+    app._notebook.add(gallery_tab, text="  🌐  Gallery URLs  ")
+    _build_gallery_tab(app, gallery_tab)
 
     app._notebook.bind("<<NotebookTabChanged>>", app._on_tab_changed)
 
