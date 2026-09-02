@@ -3,6 +3,7 @@ wallpaper.py  —  QiGor Wallpaper Manager
 Wallpaper apply, image download, lock screen, spotlight, registry helpers.
 """
 from __future__ import annotations
+import os
 import re
 import shutil
 import sys
@@ -78,6 +79,54 @@ def find_python_exe() -> str:
         pass
 
     return "python.exe"
+
+
+def store_images() -> list:
+    """
+    Every image in the store, newest first, subfolders and all.
+
+    os.walk rather than rglob: it will not follow a directory junction round in
+    a circle. Dot-folders are skipped — nobody keeps wallpapers in .git, and
+    everybody has one.
+    """
+    STORE_DIR.mkdir(parents=True, exist_ok=True)
+    found = []
+    for root, dirs, files in os.walk(STORE_DIR):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in files:
+            p = Path(root) / name
+            if p.suffix.lower() in IMAGE_EXTS:
+                found.append(p)
+
+    def _mtime(p):
+        try:
+            return p.stat().st_mtime
+        except OSError:      # deleted between the walk and the sort
+            return 0.0
+
+    found.sort(key=_mtime, reverse=True)
+    return found
+
+
+def store_label(path) -> str:
+    """
+    How a store file is named in a list: bare at the top level, folder/name
+    below it — two images called sunset.jpg in different folders have to stay
+    tellable apart.
+    """
+    try:
+        return str(Path(path).relative_to(STORE_DIR))
+    except ValueError:
+        return Path(path).name
+
+
+def is_in_store(path) -> bool:
+    """True if `path` is inside the store, however deep."""
+    try:
+        Path(path).resolve().relative_to(STORE_DIR.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
 
 
 def normalize_src(src: str) -> str:

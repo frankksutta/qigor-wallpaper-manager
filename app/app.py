@@ -257,8 +257,9 @@ class App:
 
             if self._cancel_event.is_set(): raise InterruptedError()
 
-            already_stored = Path(str(local_path)).resolve().parent.resolve() \
-                             == STORE_DIR.resolve()
+            # Anywhere under the store counts: the store has subfolders
+            # now, and a file in one of them does not need copying to the top.
+            already_stored = wp.is_in_store(local_path)
             needs_copy = (is_url or copy) and not already_stored
             if needs_copy:
                 dest = STORE_DIR / local_path.name
@@ -755,7 +756,7 @@ class App:
 
         # ── If file is not in store, copy it there silently ───────────────────
         # PersonalizationCSP requires a stable path that won't move/delete
-        already_stored = path.resolve().parent.resolve() == STORE_DIR.resolve()
+        already_stored = wp.is_in_store(path)
         if not already_stored:
             try:
                 import shutil as _sh

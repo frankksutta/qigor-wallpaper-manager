@@ -25,8 +25,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from .constants import (THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR,
-                        mark_role)
+from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, mark_role
 from . import scaling
 from . import wallpaper as wp
 from .tooltip import Tooltip
@@ -253,7 +252,8 @@ class PlaylistPanel(tk.Frame):
                                                             self._store_paths()))
         self._store_list.bind("<Double-Button-1>", lambda _e: self._add())
         Tooltip(self._store_list,
-                "Every image saved in your store, newest first.\n"
+                "Every image saved in your store, newest first —\n"
+                "subfolders included, shown as folder/name.\n"
                 "• Click to see it below\n"
                 "• Double-click, or press Add →, to put it in the playlist\n"
                 "• Ctrl-click or Shift-click to take several at once")
@@ -380,7 +380,7 @@ class PlaylistPanel(tk.Frame):
         for path in self._items:
             p = Path(path)
             self._pl_list.insert(
-                tk.END, ("   " if p.is_file() else "⚠  ") + p.name)
+                tk.END, ("   " if p.is_file() else "⚠  ") + wp.store_label(p))
         if self._current is None:
             self._pl_list.insert(tk.END, "(no playlists yet — click ＋ New)")
             self._status_var.set(
@@ -498,16 +498,12 @@ class PlaylistPanel(tk.Frame):
     def refresh_store(self):
         self._store = []
         try:
-            STORE_DIR.mkdir(parents=True, exist_ok=True)
-            files = [p for p in STORE_DIR.iterdir()
-                     if p.is_file() and p.suffix.lower() in wp.IMAGE_EXTS]
-            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            self._store = files
+            self._store = wp.store_images()
         except OSError as exc:
             self._log("Could not read the image store: {}".format(exc), "red")
         self._store_list.delete(0, tk.END)
         for path in self._store:
-            self._store_list.insert(tk.END, path.name)
+            self._store_list.insert(tk.END, wp.store_label(path))
         if not self._store:
             self._store_list.insert(tk.END, "(no images saved yet)")
 

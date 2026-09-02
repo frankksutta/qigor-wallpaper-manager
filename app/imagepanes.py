@@ -20,8 +20,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog
 
-from .constants import (THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR,
-                        mark_role)
+from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, mark_role
 from . import scaling
 from . import wallpaper as wp
 from . import preview as pv
@@ -327,18 +326,14 @@ class PaneSet:
         """
         self.store_files = []
         try:
-            STORE_DIR.mkdir(parents=True, exist_ok=True)
-            files = [p for p in STORE_DIR.iterdir()
-                     if p.is_file() and p.suffix.lower() in wp.IMAGE_EXTS]
-            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            self.store_files = files
+            self.store_files = wp.store_images()
         except OSError as exc:
             self.app._log(f"Could not read the image store: {exc}", "red")
         if self.store_listbox is None:
             return
         self.store_listbox.delete(0, tk.END)
         for path in self.store_files:
-            self.store_listbox.insert(tk.END, path.name)
+            self.store_listbox.insert(tk.END, wp.store_label(path))
         if not self.store_files:
             # An empty box looks like a failure to load; say which it is.
             self.store_listbox.insert(tk.END, "(no images saved yet)")
@@ -570,11 +565,11 @@ def _build_store(app, right, panes):
     panes.store_listbox.bind("<Double-Button-1>", lambda _: panes.apply())
     panes.store_listbox.bind("<Button-3>", panes.on_store_right_click)
     Tooltip(panes.store_listbox,
-            "Images saved in your local store.\n"
+            "Images saved in your local store, newest first.\n"
             "• Click to load one into the field above and preview it\n"
             "• Double-click to apply it\n"
             "• Right-click to add it to a slideshow playlist\n"
-            "Newest first.")
+            "Subfolders are included, shown as folder/name.")
     panes.store_frame = frame
 
 
