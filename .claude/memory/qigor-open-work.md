@@ -11,9 +11,9 @@ State at the end of 2026-09-02, when frank shut the machine down mid-stream.
 He said there were "more improvements to work on" — so expect to be picking
 this up, not starting fresh.
 
-**Nine commits are on local `master` and unpushed** (`f19cd2c` … `ac75f5c`).
-Frank asked to commit, not to push, and the repo is public — offer, don't
-push unasked. Nothing is uncommitted; the tree was clean.
+**Sixteen commits are on local `master` and unpushed** (`f19cd2c` …
+`172ec3d`). Frank asks to commit as he goes and has never asked to push; the
+repo is public — offer, don't push unasked. The tree is clean.
 
 **0.8.3 is bumped in `app/constants.py` but has never been built or
 uploaded.** Every UI change from this session is source-only: the installed
@@ -49,6 +49,46 @@ passes 1200, once per scheduled fire, and `_preview_log()` keeps only
 started/stopped/restored/error lines so a preview session cannot bury the
 rotation history in a 40-line tail. Frank was offered a Clear button back and
 has not asked for one.
+
+Four more commits followed the same afternoon, each from a one-line ask:
+
+- **`7bd3b4e`** — a **Default store** button beside Browse… on the Slideshow
+  folder row (nothing led back to `~/.qigor-wallpaper/saved_wallpapers` once
+  you had browsed away), and an **Include subfolders** tick-box. The tick-box
+  shares the Shuffle row on purpose: the panel had 14px of slack before it
+  would show a scrollbar at the default window size. Counting the pool moved
+  onto a thread with a generation counter, since it runs on every keystroke in
+  the folder box.
+- **`f20b2c5`** — the three Image store panes were a flat `iterdir()`, so a
+  store sorted into subfolders could not feed a playlist at all. They now use
+  `wallpaper.store_images()`, naming nested files `folder/name`. Playlists
+  themselves ignore recursion by design — a playlist is a list of files, and
+  it already plays them from any depth. `is_in_store()` replaced two copies of
+  "is my parent the store", which said no one folder down and would have
+  duplicated a nested image on Copy-to-store.
+- **`0807be7`** — dropping a gallery URL on **Add URL** was refused.
+  `resolve_drop_data()` turns away a URL whose last path segment has no dot,
+  which is right for the preview's drop zone and backwards for the favourites
+  buttons; `want_image=False` now says which is asking. It hid for so long
+  because the shipped archive.org default has dots in its slug.
+- **`172ec3d`** — **Import** on the Gallery URLs tab, in new `app/gallery.py`.
+  archive.org items go through `https://archive.org/metadata/<id>` rather than
+  the details page. **The thumbnail filter is the fiddly part**: an item keeps
+  a `_thumb.jpg` derivative beside every image *and* one `__ia_thumb.jpg` tile
+  filed as an **original** with format "Item Tile", so `source` alone does not
+  sort them — see `_is_item_picture()`. Other pages are scraped for src/href.
+  Anything under 25 KB is skipped as a thumbnail, which is why importing
+  `lucid24.org/an/index.html` stores nothing: every image link on it is a
+  `_128px` preview.
+
+**Testing all of this lives in the scratchpad, not the repo** — seven scripts
+(`test_logic`, `test_store_nested`, `test_drop_url`, `test_gallery`,
+`drive_gui`, `drive_log_shuffle`, `drive_import`, plus theme/zoom and 800x600
+smoke tests). They redirect `STORE_DIR`, `PLAYLIST_FILE` and `STATE_FILE` to
+temp dirs and restore the favourites list, because frank uses the app while
+the session runs — his slideshow was switched to playlist "a" mid-session and
+the tests had to prove they had not touched it. Ask before rewriting them into
+the repo; frank has not asked for a test suite.
 
 **Raised with frank, still undecided — do not just do these:**
 
