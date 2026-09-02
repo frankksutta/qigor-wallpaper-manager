@@ -189,6 +189,65 @@ def _build_gallery_tab(app, parent):
             "• Right-click any item → Delete / Rename label")
 
 
+def _scrolling_column(app, minsize):
+    """
+    Add a column to the horizontal pane whose contents scroll if they must.
+
+    pack stops handing out space once it runs short, and it drops the widgets
+    at the foot of a column silently -- nothing on screen says they exist.
+    That needs no resizing, only A+: at the window's own 800x600 minimum one
+    press was enough to lose Set Wallpaper. Both columns get this because both
+    now carry controls you cannot do without -- Browse... on the right is the
+    only way to a file dialog.
+
+    Returns (canvas, scrollbar, body); pack children into body.
+    """
+    outer = tk.Frame(app._h_pane)
+    app._h_pane.add(outer, stretch="always", minsize=minsize)
+
+    canvas = tk.Canvas(outer, highlightthickness=0, bd=0)
+    bar = tk.Scrollbar(outer, orient=tk.VERTICAL, command=canvas.yview)
+    canvas.configure(yscrollcommand=bar.set)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    body = tk.Frame(canvas)
+    win = canvas.create_window((0, 0), window=body, anchor="nw")
+
+    def _fit(_event=None):
+        """
+        Keep the body the width of the canvas, and at least its height.
+
+        Matching the canvas height when there is room lets the expanding pane
+        -- Preview on the left, History on the right -- fill the column as it
+        always did; going taller when there is not is what makes the rest
+        reachable rather than merely absent.
+        """
+        cw, ch = canvas.winfo_width(), canvas.winfo_height()
+        need = body.winfo_reqheight()
+        canvas.itemconfigure(win, width=cw, height=max(ch, need))
+        canvas.configure(scrollregion=(0, 0, cw, max(ch, need)))
+        # A scrollbar with nothing to scroll is just clutter.
+        if need > ch:
+            if not bar.winfo_ismapped():
+                bar.pack(side=tk.RIGHT, fill=tk.Y)
+        elif bar.winfo_ismapped():
+            bar.pack_forget()
+            canvas.yview_moveto(0)
+
+    canvas.bind("<Configure>", _fit)
+    body.bind("<Configure>", _fit)
+
+    def _wheel(event):
+        if bar.winfo_ismapped():
+            canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+    # Bound on enter/leave rather than with a bare bind_all, which would steal
+    # the wheel from the console and the two listboxes.
+    canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _wheel))
+    canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+    return canvas, bar, body
+
+
 def build_ui(app):
     """Build the entire main window UI onto app (App instance)."""
     root = app.root
@@ -374,112 +433,49 @@ def build_ui(app):
     app._h_pane.pack(fill=tk.BOTH, expand=True)
 
     # ─────────────────────────  LEFT COLUMN  ──────────────────────────────────
-    # Scrollable, because pack simply stops handing out space once it runs
-    # short: the widgets at the foot of this column — Set Wallpaper among them
-    # — were dropped silently, with nothing to tell you they were there. That
-    # needed no resizing at all, only A+: at the window's own 800x600 minimum
-    # one press was enough to lose the button. The scrollbar shows up only when
-    # the column genuinely does not fit.
-    left_outer = tk.Frame(app._h_pane)
-    app._h_pane.add(left_outer, stretch="always", minsize=320)
+    # The preview, and the controls that act on it.
+    app._left_canvas, app._left_scroll, left = _scrolling_column(app, 320)
 
-    app._left_canvas = tk.Canvas(left_outer, highlightthickness=0, bd=0)
-    app._left_scroll = tk.Scrollbar(left_outer, orient=tk.VERTICAL,
-                                    command=app._left_canvas.yview)
-    app._left_canvas.configure(yscrollcommand=app._left_scroll.set)
-    app._left_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    # ── Preview pane ──────────────────────────────────────────────────────────
+    prev_frame = tk.LabelFrame(left, text="  Preview  ")
+    prev_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
 
-    left = tk.Frame(app._left_canvas)
-    _left_win = app._left_canvas.create_window((0, 0), window=left, anchor="nw")
+    app._preview_label = tk.Label(prev_frame,
+        text="(no image selected)\n\nDrop or paste an image to preview",
+        font=scaling.font("Segoe UI", 9), relief=tk.SUNKEN)
+    app._preview_label.pack(fill=tk.BOTH, expand=True, padx=6, pady=(6, 2))
+    app._preview_label.bind("<Configure>", app._on_preview_resize)
 
-    def _fit_left(_event=None):
-        """
-        Keep the column the width of the canvas, and at least its height.
+    app._preview_info_var = tk.StringVar(value="")
+    tk.Label(prev_frame, textvariable=app._preview_info_var,
+             font=scaling.font("Segoe UI", 8), anchor=tk.CENTER,
+             ).pack(fill=tk.X, padx=6, pady=(0, 2))
 
-        Matching the canvas height when there is room keeps History expanding
-        the way it always did; going taller when there is not is what makes
-        the rest reachable rather than merely absent.
-        """
-        cv = app._left_canvas
-        cw, ch = cv.winfo_width(), cv.winfo_height()
-        need = left.winfo_reqheight()
-        cv.itemconfigure(_left_win, width=cw, height=max(ch, need))
-        cv.configure(scrollregion=(0, 0, cw, max(ch, need)))
-        # A scrollbar with nothing to scroll is just clutter.
-        if need > ch:
-            if not app._left_scroll.winfo_ismapped():
-                app._left_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        elif app._left_scroll.winfo_ismapped():
-            app._left_scroll.pack_forget()
-            cv.yview_moveto(0)
-
-    app._left_canvas.bind("<Configure>", _fit_left)
-    left.bind("<Configure>", _fit_left)
-
-    def _wheel_left(event):
-        if app._left_scroll.winfo_ismapped():
-            app._left_canvas.yview_scroll(-1 * (event.delta // 120), "units")
-
-    # Bound per-widget on enter/leave rather than with bind_all, which would
-    # steal the wheel from the console and the two listboxes.
-    def _wheel_on(_e=None):  app._left_canvas.bind_all("<MouseWheel>", _wheel_left)
-    def _wheel_off(_e=None): app._left_canvas.unbind_all("<MouseWheel>")
-    app._left_canvas.bind("<Enter>", _wheel_on)
-    app._left_canvas.bind("<Leave>", _wheel_off)
-
-    # ── Drop zone ─────────────────────────────────────────────────────────────
-    drop_frame = tk.LabelFrame(left,
-        text="  Drop image here  —  or paste a web URL  —  or Browse  ")
-    drop_frame.pack(fill=tk.X, pady=(0, 6))
-
-    app._drop_label = tk.Label(drop_frame,
-        text="🖼  Drag a file from Explorer\n"
-             "or drag an image from a browser\n"
-             "or paste a URL / image address below",
-        # 3 lines of text in a 5-line box: still a generous drop target, but
-        # the column now fits the default window without a scrollbar.
-        # No cursor="hand2" and no <Button-1>: clicking here used to open a
-        # file browser, which is a whole Explorer window for a stray click on
-        # what is meant to be a drop target. Browse... is the way in.
-        height=5, relief=tk.RIDGE,
-        font=scaling.font("Segoe UI", 10))
-    app._drop_label.pack(fill=tk.X, padx=6, pady=(6, 4))
-    Tooltip(app._drop_label,
-            "• Drag an image file from Windows Explorer\n"
-            "• Drag an image directly from a browser page\n"
-            "• Right-click an image → Copy image address, paste below\n"
-            "• Or use Browse… to pick a file")
-
-    # ── DnD registration ──────────────────────────────────────────────────────
-    app._dnd_msgs = []
-    app._dnd_available = dnd_mod.setup_dnd(
-        app._drop_label,
-        on_drop=app._on_drop,
-        on_enter=app._on_drop_enter,
-        on_leave=app._on_drop_leave,
-        msg_list=app._dnd_msgs)
-    if not app._dnd_available:
-        root.bind("<Control-v>", app._on_paste)
-
-    url_row = tk.Frame(drop_frame)
-    url_row.pack(fill=tk.X, padx=6, pady=(0, 6))
-    tk.Label(url_row, text="URL / Path:", font=scaling.font("Segoe UI", 9)
-             ).pack(side=tk.LEFT, padx=(0, 4))
-    app._url_entry = tk.Entry(url_row, textvariable=app._pending_path,
-                               font=scaling.font("Consolas", 10))
-    app._url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-    Tooltip(app._url_entry,
-            "Paste a web URL, image address (right-click → Copy image address),\n"
-            "or a local file path.  Press Enter or click Set Wallpaper.\n"
-            "Supports http://, https://, file://, and plain paths.")
-    app._url_entry.bind("<Return>", lambda _: app._start_task())
+    btn_row_prev = tk.Frame(prev_frame)
+    btn_row_prev.pack(pady=(0, 6))
 
     c = BTN_COLORS["primary"]
-    browse_btn = tk.Button(url_row, text="Browse…", font=scaling.font("Segoe UI", 9),
+    prev_btn = tk.Button(btn_row_prev, text="🔍  Preview Selected",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              command=app._browse_image)
-    browse_btn.pack(side=tk.LEFT, padx=(0, 2))
-    Tooltip(browse_btn, "Open a file browser to pick an image from disk.")
+              font=scaling.font("Segoe UI", 9), command=app._load_preview)
+    prev_btn.pack(side=tk.LEFT, padx=(0, 4))
+    Tooltip(prev_btn,
+            "Load and display a preview of the current URL / file.\n"
+            "Preview updates automatically when you drop or paste an image.\n"
+            "Requires Pillow:  pip install pillow")
+
+    c = BTN_COLORS["warning"]
+    cur_wp_btn = tk.Button(btn_row_prev, text="🖥  Current Wallpaper",
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              font=scaling.font("Segoe UI", 9), command=app._show_current_wallpaper)
+    cur_wp_btn.pack(side=tk.LEFT, padx=(0, 4))
+    Tooltip(cur_wp_btn,
+            "Preview the wallpaper currently set on your desktop.\n"
+            "Reads the path directly from the Windows registry.")
+
+    # "Current Lock Screen" used to sit here too. It now lives on the Lock
+    # Screen tab, which brings you back here to look at the result — three
+    # buttons no longer fit this row and the third was being clipped.
 
     # ── Style + options ───────────────────────────────────────────────────────
     opts_frame = tk.LabelFrame(left, text="  Display Style  ")
@@ -577,8 +573,72 @@ def build_ui(app):
                       font=scaling.font("Segoe UI", 9, slant="italic"), anchor=tk.W)
     lc_lbl.pack(fill=tk.X, padx=2, pady=(0, 4))
 
-    # ── History list ──────────────────────────────────────────────────────────
-    hist_frame = tk.LabelFrame(left, text="  History  ")
+    # ─────────────────────────  RIGHT COLUMN  ─────────────────────────────────
+    # Picking an image, and the images picked before: the selector, with
+    # History under it. History used to sit at the foot of the left column, a
+    # long way from the field its entries load into.
+    app._right_canvas, app._right_scroll, right = _scrolling_column(app, 260)
+
+    # ── Image Selector ────────────────────────────────────────────────────────
+    drop_frame = tk.LabelFrame(right,
+        text="  Image Selector  ")
+    drop_frame.pack(fill=tk.X, pady=(0, 6))
+
+    app._drop_label = tk.Label(drop_frame,
+        text="🖼  Drag a file from Explorer\n"
+             "or drag an image from a browser\n"
+             "or paste a URL / image address below",
+        # 3 lines of text in a 5-line box: still a generous drop target, but
+        # the column now fits the default window without a scrollbar.
+        # No cursor="hand2" and no <Button-1>: clicking here used to open a
+        # file browser, which is a whole Explorer window for a stray click on
+        # what is meant to be a drop target. Browse... is the way in.
+        height=5, relief=tk.RIDGE,
+        font=scaling.font("Segoe UI", 10))
+    app._drop_label.pack(fill=tk.X, padx=6, pady=(6, 4))
+    Tooltip(app._drop_label,
+            "• Drag an image file from Windows Explorer\n"
+            "• Drag an image directly from a browser page\n"
+            "• Right-click an image → Copy image address, paste below\n"
+            "• Or use Browse… to pick a file")
+
+    # ── DnD registration ──────────────────────────────────────────────────────
+    app._dnd_msgs = []
+    app._dnd_available = dnd_mod.setup_dnd(
+        app._drop_label,
+        on_drop=app._on_drop,
+        on_enter=app._on_drop_enter,
+        on_leave=app._on_drop_leave,
+        msg_list=app._dnd_msgs)
+    if not app._dnd_available:
+        root.bind("<Control-v>", app._on_paste)
+
+    url_row = tk.Frame(drop_frame)
+    url_row.pack(fill=tk.X, padx=6, pady=(0, 6))
+    tk.Label(url_row, text="URL / Path:", font=scaling.font("Segoe UI", 9)
+             ).pack(side=tk.LEFT, padx=(0, 4))
+    app._url_entry = tk.Entry(url_row, textvariable=app._pending_path,
+                               font=scaling.font("Consolas", 10))
+    # Packed after Browse... below, so it takes only the space that is left.
+    Tooltip(app._url_entry,
+            "Paste a web URL, image address (right-click → Copy image address),\n"
+            "or a local file path.  Press Enter or click Set Wallpaper.\n"
+            "Supports http://, https://, file://, and plain paths.")
+    app._url_entry.bind("<Return>", lambda _: app._start_task())
+
+    c = BTN_COLORS["primary"]
+    browse_btn = tk.Button(url_row, text="Browse…", font=scaling.font("Segoe UI", 9),
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              command=app._browse_image)
+    # Browse... first and anchored right: left-to-right, the label and entry
+    # claimed the row's width and this fell off the end. It is the only way to
+    # a file dialog now, so it cannot be the thing that gets squeezed out.
+    browse_btn.pack(side=tk.RIGHT, padx=(4, 2))
+    app._url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+    Tooltip(browse_btn, "Open a file browser to pick an image from disk.")
+
+    # ── History list, under the selector it feeds ─────────────────────────────
+    hist_frame = tk.LabelFrame(right, text="  History  ")
     hist_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
 
     hist_hdr = tk.Frame(hist_frame)
@@ -611,53 +671,6 @@ def build_ui(app):
     Tooltip(app._hist_listbox,
             "Click to load into the URL/path field and preview.\n"
             "Double-click to apply immediately.")
-
-    # ─────────────────────────  RIGHT COLUMN  ─────────────────────────────────
-    right = tk.Frame(app._h_pane)
-    app._h_pane.add(right, stretch="always", minsize=260)
-
-    # ── Preview pane ──────────────────────────────────────────────────────────
-    prev_frame = tk.LabelFrame(right, text="  Preview  ")
-    prev_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
-
-    app._preview_label = tk.Label(prev_frame,
-        text="(no image selected)\n\nDrop or paste an image to preview",
-        font=scaling.font("Segoe UI", 9), relief=tk.SUNKEN)
-    app._preview_label.pack(fill=tk.BOTH, expand=True, padx=6, pady=(6, 2))
-    app._preview_label.bind("<Configure>", app._on_preview_resize)
-
-    app._preview_info_var = tk.StringVar(value="")
-    tk.Label(prev_frame, textvariable=app._preview_info_var,
-             font=scaling.font("Segoe UI", 8), anchor=tk.CENTER,
-             ).pack(fill=tk.X, padx=6, pady=(0, 2))
-
-    btn_row_prev = tk.Frame(prev_frame)
-    btn_row_prev.pack(pady=(0, 6))
-
-    c = BTN_COLORS["primary"]
-    prev_btn = tk.Button(btn_row_prev, text="🔍  Preview Selected",
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=scaling.font("Segoe UI", 9), command=app._load_preview)
-    prev_btn.pack(side=tk.LEFT, padx=(0, 4))
-    Tooltip(prev_btn,
-            "Load and display a preview of the current URL / file.\n"
-            "Preview updates automatically when you drop or paste an image.\n"
-            "Requires Pillow:  pip install pillow")
-
-    c = BTN_COLORS["warning"]
-    cur_wp_btn = tk.Button(btn_row_prev, text="🖥  Current Wallpaper",
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=scaling.font("Segoe UI", 9), command=app._show_current_wallpaper)
-    cur_wp_btn.pack(side=tk.LEFT, padx=(0, 4))
-    Tooltip(cur_wp_btn,
-            "Preview the wallpaper currently set on your desktop.\n"
-            "Reads the path directly from the Windows registry.")
-
-    # "Current Lock Screen" used to sit here too. It now lives on the Lock
-    # Screen tab, which brings you back here to look at the result — three
-    # buttons no longer fit this row and the third was being clipped.
-
-
 
     # ── Lock Screen tab ───────────────────────────────────────────────────────
     lock_tab = tk.Frame(app._notebook)
