@@ -81,21 +81,18 @@ class PaneSpec:
         self.right_minsize = right_minsize
 
 
-def _scrolling_column(pane, minsize):
+def scrollable(outer):
     """
-    Add a column to `pane` whose contents scroll if they must.
+    Fill `outer` with a body whose contents scroll if they must.
 
     pack stops handing out space once it runs short, and it drops the widgets
     at the foot of a column silently — nothing on screen says they exist. That
     needs no resizing, only A+: at the window's own 800x600 minimum one press
     was enough to lose Set Wallpaper. The scrollbar appears only when the
-    column really does not fit.
+    contents really do not fit.
 
     Returns (canvas, scrollbar, body); pack children into body.
     """
-    outer = tk.Frame(pane)
-    pane.add(outer, stretch="always", minsize=minsize)
-
     canvas = tk.Canvas(outer, highlightthickness=0, bd=0)
     bar = tk.Scrollbar(outer, orient=tk.VERTICAL, command=canvas.yview)
     canvas.configure(yscrollcommand=bar.set)
@@ -136,6 +133,13 @@ def _scrolling_column(pane, minsize):
     canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _wheel))
     canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
     return canvas, bar, body
+
+
+def _scrolling_column(pane, minsize):
+    """One scrolling column of a PanedWindow."""
+    outer = tk.Frame(pane)
+    pane.add(outer, stretch="always", minsize=minsize)
+    return scrollable(outer)
 
 
 class PaneSet:
@@ -348,6 +352,40 @@ class PaneSet:
             return
         self.select(str(self.store_files[idx]))
 
+    def on_store_right_click(self, event):
+        """
+        Put a saved image into a playlist without leaving this tab.
+
+        Building a playlist is the Playlists tab's job, but noticing that an
+        image belongs in one happens here, while looking at the store.
+        """
+        from . import playlists as pl
+        if self.store_listbox is None:
+            return
+        idx = self.store_listbox.nearest(event.y)
+        if idx < 0 or idx >= len(self.store_files):
+            return
+        self.store_listbox.selection_clear(0, tk.END)
+        self.store_listbox.selection_set(idx)
+        path = str(self.store_files[idx])
+
+        t = THEMES.get(self.app.theme_name, THEMES["dark"])
+        menu = tk.Menu(self.app.root, tearoff=0,
+                       font=scaling.font("Segoe UI", 9))
+        menu.configure(bg=t["btn_bg"], fg=t["fg"],
+                       activebackground=BTN_COLORS["primary"]["bg"],
+                       activeforeground="#ffffff")
+        names = pl.names()
+        for name in names:
+            menu.add_command(
+                label="Add to “{}”".format(name),
+                command=lambda n=name: self.app.add_to_playlist([path], n))
+        if names:
+            menu.add_separator()
+        menu.add_command(label="Add to a new playlist…",
+                         command=lambda: self.app.add_to_playlist([path]))
+        menu.tk_popup(event.x_root, event.y_root)
+
     def apply(self):
         """Whatever this tab's primary action is."""
         if self.spec.on_apply is not None:
@@ -530,10 +568,12 @@ def _build_store(app, right, panes):
     bar.config(command=panes.store_listbox.yview)
     panes.store_listbox.bind("<<ListboxSelect>>", panes.on_store_select)
     panes.store_listbox.bind("<Double-Button-1>", lambda _: panes.apply())
+    panes.store_listbox.bind("<Button-3>", panes.on_store_right_click)
     Tooltip(panes.store_listbox,
             "Images saved in your local store.\n"
             "• Click to load one into the field above and preview it\n"
             "• Double-click to apply it\n"
+            "• Right-click to add it to a slideshow playlist\n"
             "Newest first.")
     panes.store_frame = frame
 

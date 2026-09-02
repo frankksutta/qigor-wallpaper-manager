@@ -14,6 +14,7 @@ from . import scaling
 from .tooltip import Tooltip
 from .slideshow import SlideshowPanel
 from .reminder import ReminderPanel
+from .playlists import PlaylistPanel
 from . import dnd as dnd_mod
 from . import imagepanes
 
@@ -494,8 +495,20 @@ def build_ui(app):
     app._slideshow_panel = SlideshowPanel(
         app._notebook, app.cfg, app.theme_name,
         on_result=app._on_slideshow_result,
-        on_scheduled=lambda s: app._mark_tab(app._slideshow_panel, s))
+        on_scheduled=lambda s: app._mark_tab(app._slideshow_panel, s),
+        on_edit_playlists=app._show_playlists_tab,
+        log=app._log)
     app._notebook.add(app._slideshow_panel, text="  ▶  Slideshow  ")
+
+    # Next to the Slideshow tab, which is the only thing that plays a
+    # playlist. Editing one takes effect on the next rotation, so the two
+    # tabs get used together.
+    app._playlist_panel = PlaylistPanel(
+        app._notebook, app.cfg, app.theme_name,
+        on_use=app._use_playlist,
+        on_change=app._on_playlists_changed,
+        log=app._log)
+    app._notebook.add(app._playlist_panel, text="  ☰  Playlists  ")
 
     app._reminder_panel = ReminderPanel(app._notebook, app.cfg, app.theme_name,
                                         on_result=app._on_reminder_result)

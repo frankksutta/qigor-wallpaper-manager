@@ -1,6 +1,6 @@
 """
 dialogs.py  —  QiGor Wallpaper Manager
-AboutDialog, _InputDialog, _RenameDialog.
+AboutDialog, NameDialog, _InputDialog, _RenameDialog.
 """
 import sys
 import tkinter as tk
@@ -87,6 +87,16 @@ class AboutDialog(tk.Toplevel):
             "Scheduler — no background app eating memory — and keeps working "
             "even after a reboot. New images you download are automatically "
             "added to the rotation in the next cycle.\n\n"
+
+            "── PLAYLISTS ────────────────────────────────────────────\n\n"
+
+            "A whole folder is not always what you want to look at. Name a "
+            "set of images from your store as a playlist — one for work, one "
+            "for the weekend — and point the slideshow at that instead. A "
+            "playlist is read fresh on every change, so editing one takes "
+            "effect on the next rotation. Quick Preview runs that same "
+            "rotation seconds apart, so you can see how a set looks without "
+            "waiting for the schedule.\n\n"
 
             "── REMINDERS ────────────────────────────────────────────\n\n"
 
@@ -199,6 +209,63 @@ class _InputDialog(tk.Toplevel):
         url = self._url_var.get().strip()
         if lbl and url:
             self.result = (lbl, url)
+            self.destroy()
+
+
+class NameDialog(tk.Toplevel):
+    """
+    Ask for one line of text. result = the trimmed string, or None.
+
+    _InputDialog and _RenameDialog both want a label *and* a location, which
+    is two fields more than naming a playlist needs.
+    """
+
+    def __init__(self, parent, title, prompt, theme_name="dark",
+                 prefill="", label="Name:"):
+        super().__init__(parent)
+        self.title(title)
+        self.result = None
+        t = THEMES.get(theme_name, THEMES["dark"])
+        self.configure(bg=t["bg"])
+        self.resizable(True, False)
+        self.minsize(420, 0)
+        self.grab_set()
+        fn  = scaling.font("Segoe UI", 10)
+        fnb = scaling.font("Segoe UI", 10, "bold")
+
+        btn_row = tk.Frame(self, bg=t["bg"])
+        btn_row.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(4, 12))
+        c = BTN_COLORS["success"]
+        tk.Button(btn_row, text="OK", height=2, font=fnb,
+                  bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+                  command=self._ok).pack(side=tk.LEFT, fill=tk.X,
+                                         expand=True, padx=(0, 6))
+        tk.Button(btn_row, text="Cancel", height=2, font=fn,
+                  bg=t["btn_bg"], fg=t["btn_fg"],
+                  command=self.destroy).pack(side=tk.LEFT, fill=tk.X,
+                                             expand=True)
+
+        body = tk.Frame(self, bg=t["bg"])
+        body.pack(fill=tk.BOTH, padx=16, pady=12)
+        tk.Label(body, text=prompt, font=fn, bg=t["bg"], fg=t["fg"],
+                 justify=tk.LEFT, wraplength=380).pack(anchor=tk.W, pady=(0, 8))
+        tk.Label(body, text=label, font=fnb,
+                 bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
+        self._var = tk.StringVar(value=prefill)
+        entry = tk.Entry(body, textvariable=self._var,
+                         font=scaling.font("Consolas", 10),
+                         bg=t["entry_bg"], fg=t["entry_fg"], width=40)
+        entry.pack(fill=tk.X, pady=(4, 0))
+        entry.select_range(0, tk.END)
+        entry.focus_set()
+
+        self.bind("<Return>", lambda _: self._ok())
+        self.bind("<Escape>", lambda _: self.destroy())
+
+    def _ok(self):
+        text = self._var.get().strip()
+        if text:
+            self.result = text
             self.destroy()
 
 

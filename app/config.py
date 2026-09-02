@@ -34,6 +34,8 @@ class Config:
         "reminder_hour":    "09",
         "reminder_min":     "00",
         "seeded_favorites": False,
+        "slideshow_preview_secs":    10,      # quick-preview rotation, seconds
+        "slideshow_preview_restore": True,    # put the wallpaper back after
         "update_check_enabled": True,
         "update_last_check":    "",    # ISO timestamp of the last successful poll
         "update_skip_build":    "",    # a build the user chose not to be nagged about

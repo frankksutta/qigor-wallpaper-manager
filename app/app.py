@@ -441,6 +441,64 @@ class App:
             panes = getattr(self, attr, None)
             if panes is not None:
                 panes.refresh_store()
+        panel = getattr(self, "_playlist_panel", None)
+        if panel is not None:
+            panel.refresh_store()
+
+    # ── Playlists ─────────────────────────────────────────────────────────────
+
+    def _show_playlists_tab(self):
+        self._select_tab(self._playlist_panel)
+
+    def _use_playlist(self, name):
+        """The Playlists tab handing one to the slideshow."""
+        self._slideshow_panel.use_playlist(name)
+        self._select_tab(self._slideshow_panel)
+        self._log(f"Slideshow source set to playlist: {name}", "cyan")
+        self._log("   Press ▶ Start on the Slideshow tab to schedule it.", "dim")
+
+    def _on_playlists_changed(self):
+        """A playlist was added, renamed or deleted — refresh the chooser."""
+        panel = getattr(self, "_slideshow_panel", None)
+        if panel is not None:
+            panel.refresh_playlists()
+
+    def add_to_playlist(self, paths, name=None):
+        """
+        Put images in a playlist from anywhere in the app.
+
+        `name` None asks for a new playlist. Returns the playlist's name, or
+        None if nothing was added.
+        """
+        from . import playlists as pl
+        from .dialogs import NameDialog
+        if not paths:
+            return None
+        if name is None:
+            dlg = NameDialog(self.root, "New Playlist",
+                             "Name for the new playlist:", self.theme_name,
+                             label="Playlist name:")
+            self.root.wait_window(dlg)
+            name = dlg.result
+            if not name:
+                return None
+            if not pl.create(name):
+                messagebox.showerror(
+                    "Playlist exists",
+                    f"A playlist called \u201c{name}\u201d already exists.",
+                    parent=self.root)
+                return None
+        items = pl.items(name)
+        have  = {i.lower() for i in items}
+        added = [p for p in paths if str(p).lower() not in have]
+        pl.set_items(name, items + [str(p) for p in added])
+        self._log(f"Playlist “{name}”: added {len(added)} image"
+                  f"{'' if len(added) == 1 else 's'}.", "green")
+        panel = getattr(self, "_playlist_panel", None)
+        if panel is not None:
+            panel.refresh_playlists(select=name)
+        self._on_playlists_changed()
+        return name
 
     def _on_store_select(self, _=None):
         self._wp_panes.on_store_select()
@@ -990,6 +1048,11 @@ class App:
         elif result == "stopped":
             self._mark_tab(self._slideshow_panel, False)
             self._log("Wallpaper slideshow stopped.", "yellow")
+        elif result == "preview-started":
+            self._log("▶  Slideshow preview started — the wallpaper will "
+                      "rotate while QiGor is open.", "cyan")
+        elif result == "preview-stopped":
+            self._log("⏹  Slideshow preview stopped.", "yellow")
         elif result == "next":
             from .slideshow import load_state as ss_load_state
             state = ss_load_state()
@@ -1142,7 +1205,8 @@ class App:
         # Tagged labels come out of the recursive pass with the right colour for
         # the new theme. The panels still get a nudge: their status lines carry a
         # colour that depends on what the scheduler says, not just on the theme.
-        for panel in ("_slideshow_panel", "_reminder_panel"):
+        for panel in ("_slideshow_panel", "_reminder_panel",
+                      "_playlist_panel"):
             p = getattr(self, panel, None)
             if p is not None and hasattr(p, "retheme"):
                 p.retheme(self.theme_name)
@@ -1324,5 +1388,14 @@ class App:
     # ── Close ─────────────────────────────────────────────────────────────────
 
     def _on_close(self):
+        # A preview rotates the wallpaper on this app's own timer, so closing
+        # the window is the only thing that can end one — and it is what puts
+        # the wallpaper back if that was asked for.
+        panel = getattr(self, "_slideshow_panel", None)
+        if panel is not None:
+            try:
+                panel.stop_preview()
+            except tk.TclError:
+                pass
         self.cfg.set("window_geometry", self.root.geometry())
         self.root.destroy()

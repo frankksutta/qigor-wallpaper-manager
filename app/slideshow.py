@@ -21,7 +21,10 @@ from pathlib import Path
 from .constants import (THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR,
                         WALLPAPER_STYLES, HELPERS_DIR, APP_BUILD,
                         mark_role, paint_role)
-from .wallpaper import find_python_exe
+from .wallpaper import (find_python_exe, apply_wallpaper,
+                         get_current_wallpaper_path)
+from .playlists import find as find_playlist, names as playlist_names
+from . import playlists
 from . import scaling
 from .tooltip import Tooltip
 
@@ -41,6 +44,12 @@ INTERVAL_OPTIONS = [
     ("8 hours", 480),
     ("Daily",   1440),
 ]
+
+# Quick-preview rotation, in seconds. Windows Task Scheduler refuses any
+# repetition interval under a minute — it rejects PT5S and PT30S outright —
+# so the preview is driven by the app's own timer. Everything below that timer
+# is the scheduled slideshow's own code, so what you see is what it will do.
+PREVIEW_SECONDS = [str(n) for n in range(5, 101, 5)]
 
 
 # ── State helpers ─────────────────────────────────────────────────────────────
@@ -115,7 +124,163 @@ def remove_task() -> bool:
 
 
 
-# ── Scheduler ─────────────────────────────────────────────────────────────────
+# ── The image pool ───────────────────────────────────────────────
+
+def resolve_pool(state: dict) -> list:
+    """
+    Every image the slideshow may show, as absolute path strings.
+
+    Both sources are re-read on every rotation rather than frozen into the
+    state: images saved to a folder join the rotation on their own, and a
+    playlist edited while the slideshow is running takes effect at its next
+    fire.
+    """
+    if state.get("source") == "playlist":
+        return playlists.existing_items(state.get("playlist") or "")
+    folder = Path(state.get("folder", ""))
+    return [str(folder / name) for name in get_images_in_folder(folder)]
+
+
+def describe_pool(state: dict) -> str:
+    """How to name this slideshow's source in a message."""
+    if state.get("source") == "playlist":
+        return "playlist “{}”".format(state.get("playlist") or "?")
+    return "folder:\n{}".format(state.get("folder", "?"))
+
+
+def advance(state: dict, *, force: bool = False, persist: bool = True,
+            log=lambda _m: None):
+    """
+    Move the rotation on by one image. Returns (image_path or None, error).
+
+    The scheduled runner and the in-app preview both come through here, so a
+    preview shows exactly what the slideshow would do — same pool, same
+    shuffled queue, same display style. `persist` is what separates them: a
+    preview must not write the real rotation's position or its last_set
+    timestamp, or the next scheduled fire would take itself for a double-fire
+    and skip.
+
+    `state` is mutated in place; it is only written to disk when persist.
+    """
+    import random
+    import datetime as _dt
+
+    interval_min = state.get("interval_min", 10)
+
+    # Guard: skip if the last rotation was less than 90% of the interval ago.
+    # Prevents StartWhenAvailable catch-up from double-firing right after a
+    # normal on-time fire.  force=True bypasses it — used by "Next Now", and
+    # by the preview, which rotates in seconds.
+    if not force:
+        last_set_str = state.get("last_set", "")
+        if last_set_str:
+            try:
+                last_set    = _dt.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")
+                elapsed_min = (_dt.datetime.now() - last_set).total_seconds() / 60
+                threshold   = interval_min * 0.9
+                log("Guard: elapsed={:.1f}min  threshold={:.1f}min (90% of {}min)  last_set={}".format(
+                    elapsed_min, threshold, interval_min, last_set_str))
+                if elapsed_min < threshold:
+                    log("Skipping: too soon.")
+                    return None, ""
+            except Exception as e:
+                log("Guard parse error (proceeding): {}".format(e))
+        else:
+            log("Guard: no last_set yet — proceeding.")
+    else:
+        log("Force=True, bypassing guard.")
+
+    style   = state.get("style", "Fill")
+    shuffle = state.get("shuffle", True)
+
+    if state.get("source") == "playlist":
+        name = state.get("playlist") or ""
+        if not name:
+            log("ERROR: no playlist chosen.")
+            return None, "No playlist chosen.\nPick one in the Slideshow tab."
+        if find_playlist(name) is None:
+            log("ERROR: playlist gone: " + name)
+            return None, "Playlist “{}” no longer exists.".format(name)
+    else:
+        folder = Path(state.get("folder", ""))
+        if not folder.exists():
+            log("ERROR: folder not found: " + str(folder))
+            return None, "Folder not found:\n{}".format(folder)
+
+    pool = resolve_pool(state)
+    if not pool:
+        log("ERROR: no images in " + describe_pool(state))
+        return None, "No images found in {}".format(describe_pool(state))
+
+    queue = state.get("queue", [])
+    index = state.get("queue_index", 0)
+
+    if not queue or index >= len(queue) or set(pool) != set(queue):
+        log("Rebuilding queue ({} images)".format(len(pool)))
+        queue = list(pool)
+        if shuffle:
+            random.shuffle(queue)
+        index = 0
+
+    chosen = None
+    for _ in range(len(queue)):
+        candidate = Path(queue[index % len(queue)])
+        # No modulo on the stored index: it must be allowed to reach
+        # len(queue) so the next run's "index >= len(queue)" check rebuilds —
+        # and reshuffles — the queue after every full cycle.
+        index += 1
+        if candidate.exists():
+            chosen = candidate
+            break
+        log("Skipping missing: " + candidate.name)
+
+    if not chosen:
+        log("ERROR: all files in queue are missing.")
+        return None, "All images in the queue are missing.\nCheck {}".format(
+            describe_pool(state))
+
+    apply_wallpaper(str(chosen), style)
+
+    state["queue"]       = queue
+    state["queue_index"] = index
+    state["last_set"]    = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    state["last_file"]   = chosen.name
+    if persist:
+        save_state(state)
+    log("Done: {} ({}/{})".format(chosen.name, index, len(queue)))
+    return chosen, ""
+
+
+def _log_tag(line: str) -> str:
+    """The console colour a log line has earned."""
+    if "ERROR" in line:     return "red"
+    if "Skipping" in line:  return "yellow"
+    if "[PREVIEW]" in line: return "cyan"
+    if "[SETUP]" in line:   return "magenta"
+    if "Done:" in line:     return "green"
+    return "dim"
+
+
+def _trim_log(path: Path, keep: int = 400, limit: int = 1200):
+    """
+    Hold the log to its last `keep` lines once it passes `limit`.
+
+    It used to be cleared by hand, from a button on the window that showed it.
+    That window is gone — the history prints into the app console now — so the
+    file looks after itself, once per scheduled fire.
+    """
+    try:
+        if not path.exists():
+            return
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if len(lines) <= limit:
+            return
+        path.write_text("\n".join(lines[-keep:]) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+# ── Scheduler ───────────────────────────────────────────────────
 
 def _run_next_headless(force: bool = False):
     """
@@ -125,8 +290,7 @@ def _run_next_headless(force: bool = False):
 
     force=True bypasses the elapsed-time guard (used by the "Next Now" button).
     """
-    import random, ctypes, winreg, datetime as _dt
-    from pathlib import Path as _P
+    import datetime as _dt
 
     log_file = HELPERS_DIR / "_slideshow_log.txt"
     HELPERS_DIR.mkdir(parents=True, exist_ok=True)
@@ -143,103 +307,20 @@ def _run_next_headless(force: bool = False):
         except Exception:
             pass
 
+    _trim_log(log_file)
     log("--- --next triggered. argv={} force={}".format(sys.argv[1:], force))
 
     state = load_state()
     if not state:
         log("ERROR: no state file. Configure slideshow in the QiGor app.")
-        _toast("Slideshow stopped", "No configuration found. Open QiGor and click ▶ Start.")
+        _toast("Slideshow stopped",
+               "No configuration found. Open QiGor and click ▶ Start.")
         return
 
-    interval_min = state.get("interval_min", 10)
-    last_set_str = state.get("last_set", "")
-
-    # Guard: skip if last rotation was less than 90% of the interval ago.
-    # Prevents StartWhenAvailable catch-up from double-firing right after a
-    # normal on-time fire.  force=True bypasses (used by "Next Now" button).
-    if not force:
-        if last_set_str:
-            try:
-                last_set    = _dt.datetime.strptime(last_set_str, "%Y-%m-%d %H:%M:%S")
-                elapsed_min = (_dt.datetime.now() - last_set).total_seconds() / 60
-                threshold   = interval_min * 0.9
-                log("Guard: elapsed={:.1f}min  threshold={:.1f}min (90% of {}min)  last_set={}".format(
-                    elapsed_min, threshold, interval_min, last_set_str))
-                if elapsed_min < threshold:
-                    log("Skipping: too soon.")
-                    return
-            except Exception as e:
-                log("Guard parse error (proceeding): {}".format(e))
-        else:
-            log("Guard: no last_set yet — proceeding.")
-    else:
-        log("Force=True, bypassing guard.")
-
-    folder  = _P(state.get("folder", ""))
-    style   = state.get("style", "Fill")
-    shuffle = state.get("shuffle", True)
-
-    if not folder.exists():
-        log("ERROR: folder not found: " + str(folder))
-        _toast("Slideshow stopped", "Folder not found:\n{}".format(folder))
+    _chosen, err = advance(state, force=force, persist=True, log=log)
+    if err:
+        _toast("Slideshow stopped", err)
         return
-
-    images = get_images_in_folder(folder)
-    if not images:
-        log("ERROR: no images in " + str(folder))
-        _toast("Slideshow stopped", "No images found in:\n{}".format(folder))
-        return
-
-    queue = state.get("queue", [])
-    index = state.get("queue_index", 0)
-
-    if not queue or index >= len(queue) or set(images) != set(queue):
-        log("Rebuilding queue ({} images)".format(len(images)))
-        queue = list(images)
-        if shuffle:
-            random.shuffle(queue)
-        index = 0
-
-    chosen = None
-    for _ in range(len(queue)):
-        candidate = queue[index % len(queue)]
-        full_path = folder / candidate
-        # No modulo: index must be allowed to reach len(queue) so the next
-        # run's "index >= len(queue)" check rebuilds — and reshuffles — the
-        # queue after every full cycle.
-        index += 1
-        if full_path.exists():
-            chosen = full_path
-            break
-        log("Skipping missing: " + candidate)
-
-    if not chosen:
-        log("ERROR: all files in queue are missing.")
-        _toast("Slideshow stopped", "All images in the queue are missing.\nCheck folder: {}".format(folder))
-        return
-
-    # Apply wallpaper via registry + ctypes
-    styles = {
-        "Fill": ("10","0"), "Fit": ("6","0"), "Stretch": ("2","0"),
-        "Tile": ("0","1"),  "Center": ("0","0"), "Span": ("22","0"),
-    }
-    sv, tv = styles.get(style, ("10","0"))
-    try:
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                             r"Control Panel\Desktop", 0, winreg.KEY_SET_VALUE)
-        winreg.SetValueEx(key, "WallpaperStyle", 0, winreg.REG_SZ, sv)
-        winreg.SetValueEx(key, "TileWallpaper",  0, winreg.REG_SZ, tv)
-        winreg.CloseKey(key)
-    except Exception as e:
-        log("Registry error: " + str(e))
-    ctypes.windll.user32.SystemParametersInfoW(20, 0, str(chosen), 3)
-
-    state["queue"]       = queue
-    state["queue_index"] = index
-    state["last_set"]    = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    state["last_file"]   = chosen.name
-    save_state(state)
-    log("Done: {} ({}/{})".format(chosen.name, index, len(queue)))
 
     # Query task status so the log shows when the next fire is scheduled
     try:
@@ -491,11 +572,30 @@ class SlideshowPanel(tk.Frame):
     wait_window/result handshake, since nothing waits on a tab.
     """
 
+    # How much of the rotation history 📋 Log prints. The file keeps more —
+    # it is named in the header line — but a console is for the recent past.
+    LOG_TAIL = 40
+
     def __init__(self, parent, cfg, theme_name, on_result=None,
-                 on_scheduled=None):
+                 on_scheduled=None, on_edit_playlists=None, log=None):
         super().__init__(parent)
         self.result   = None
         self._on_result = on_result
+        # Writes into the app's console. The panel had no way to reach it, so
+        # the rotation history could only be shown in a window of its own.
+        self._console_log = log or (lambda *_a, **_k: None)
+        # Opens the Playlists tab. The panel offers the playlists as a source
+        # but does not own them, so it asks the app to switch tabs.
+        self._on_edit_playlists = on_edit_playlists
+        # Quick preview: a timer of this panel's own, and a copy of the
+        # settings for it to walk. Never the state on disk — see advance().
+        self._preview_after   = None
+        self._previewing      = False
+        self._preview_state   = {}
+        self._preview_restore = None
+        self._preview_n       = 0
+        self._preview_left    = 0
+        self._preview_last    = ""
         # Reports whether a task is registered, from the background query the
         # panel already runs. Without it the app asked schtasks a second time
         # on the main thread just to put a tick on the tab.
@@ -515,6 +615,10 @@ class SlideshowPanel(tk.Frame):
         saved_shuffle  = state.get("shuffle",      True)
         saved_style    = state.get("style",
                                    cfg.get("wallpaper_style") or "Fill")
+        saved_source   = state.get("source",   "folder")
+        saved_playlist = state.get("playlist", "")
+        saved_psecs    = str(cfg.get("slideshow_preview_secs") or 10)
+        saved_restore  = bool(cfg.get("slideshow_preview_restore"))
 
         # ── Buttons ───────────────────────────────────────────────────────────
         btn_row = tk.Frame(self, bg=t["bg"])
@@ -545,8 +649,9 @@ class SlideshowPanel(tk.Frame):
                   command=self._view_log)
         btn_log.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         Tooltip(btn_log,
-                "View the rotation history log:\n"
-                "timestamps, guard decisions, and any errors.")
+                "Print the rotation history into the log console below:\n"
+                "timestamps, guard decisions, previews, and any errors.\n"
+                "The last {} lines; the file holds more.".format(self.LOG_TAIL))
 
         c = BTN_COLORS["primary"]
         self._btn_test = tk.Button(btn_row, text="⚙ Test Task", height=2, font=fn,
@@ -570,14 +675,24 @@ class SlideshowPanel(tk.Frame):
 
 
         # ── Body ──────────────────────────────────────────────────────────────
-        body = tk.Frame(self, bg=t["bg"])
-        body.pack(fill=tk.BOTH, padx=16, pady=(14, 6))
+        # Imported here, not at the top of the module: imagepanes reaches
+        # Pillow, and `--next` loads this module on a timer to move one
+        # wallpaper along without ever building a widget.
+        from .imagepanes import scrollable
+        # It scrolls: the panel has since grown a source picker and a preview
+        # block, and pack drops the rows at the foot of a short window
+        # silently — nothing on screen says they are there.
+        self._scroll_canvas, self._scroll_bar, scroll_body = scrollable(self)
+        body = tk.Frame(scroll_body, bg=t["bg"])
+        body.pack(fill=tk.BOTH, expand=True, padx=16, pady=(14, 6))
 
         tk.Label(body, text="Wallpaper Slideshow", font=fnb,
                  bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
         mark_role(tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=460,
-                 text="Automatically rotates through images in the selected folder "
-                      "using Windows Task Scheduler. No background process."),
+                 justify=tk.LEFT,
+                 text="Automatically rotates through a folder, or through a "
+                      "playlist you have built, using Windows Task Scheduler. "
+                      "No background process."),
                   "dim").pack(anchor=tk.W, pady=(2, 8))
 
         # Status label — populated immediately with a placeholder, then updated
@@ -602,23 +717,67 @@ class SlideshowPanel(tk.Frame):
 
         ttk.Separator(body).pack(fill=tk.X, pady=(0, 8))
 
+        # Where the images come from
+        sr0 = tk.Frame(body, bg=t["bg"])
+        sr0.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(sr0, text="Play from:", font=fnb, bg=t["bg"], fg=t["fg"],
+                 width=12, anchor=tk.W).pack(side=tk.LEFT)
+        self._source_var = tk.StringVar(value=saved_source)
+        for label, value, tip in (
+                ("Folder", "folder",
+                 "Rotate through every image in the folder below.\n"
+                 "Images saved there later join the rotation on their own."),
+                ("Playlist", "playlist",
+                 "Rotate through a playlist you built on the Playlists tab.")):
+            rb = tk.Radiobutton(sr0, text=label, variable=self._source_var,
+                                value=value, font=fn,
+                                bg=t["bg"], fg=t["fg"],
+                                selectcolor=t["entry_bg"],
+                                activebackground=t["bg"],
+                                command=self._on_source_change)
+            rb.pack(side=tk.LEFT, padx=(4, 4))
+            Tooltip(rb, tip)
+
+        self._playlist_var = tk.StringVar(value=saved_playlist)
+        self._playlist_combo = ttk.Combobox(
+            sr0, textvariable=self._playlist_var, values=playlist_names(),
+            width=20, state="readonly", font=fn)
+        self._playlist_combo.pack(side=tk.LEFT, padx=(2, 4))
+        self._playlist_combo.bind("<<ComboboxSelected>>",
+                                  lambda _e: self._update_count())
+        Tooltip(self._playlist_combo,
+                "Which playlist to rotate through.\n"
+                "A playlist is read fresh on every change, so editing one\n"
+                "changes a running slideshow from its next image on.")
+
+        c = BTN_COLORS["primary"]
+        edit_btn = tk.Button(sr0, text="Edit…", font=fns,
+                             bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+                             command=self._edit_playlists)
+        edit_btn.pack(side=tk.LEFT)
+        Tooltip(edit_btn, "Open the Playlists tab to build or change one.")
+
         # Folder
         fr = tk.Frame(body, bg=t["bg"])
         fr.pack(fill=tk.X, pady=(0, 4))
         tk.Label(fr, text="Folder:", font=fnb, bg=t["bg"], fg=t["fg"],
                  width=12, anchor=tk.W).pack(side=tk.LEFT)
         self._folder_var = tk.StringVar(value=saved_folder)
-        tk.Entry(fr, textvariable=self._folder_var,
+        self._folder_entry = tk.Entry(fr, textvariable=self._folder_var,
                  font=scaling.font("Consolas", 9),
-                 bg=t["entry_bg"], fg=t["entry_fg"]).pack(
-                     side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4))
+                 bg=t["entry_bg"], fg=t["entry_fg"])
+        self._folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True,
+                                padx=(4, 4))
         c = BTN_COLORS["primary"]
-        tk.Button(fr, text="Browse…", font=fns,
+        self._browse_btn = tk.Button(fr, text="Browse…", font=fns,
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-                  command=self._browse_folder).pack(side=tk.LEFT)
+                  command=self._browse_folder)
+        self._browse_btn.pack(side=tk.LEFT)
 
+        # Filled in by the _on_source_change() at the foot of __init__: the
+        # count now depends on the source picker above and on the controls
+        # built below this line.
         self._count_var = tk.StringVar()
-        self._update_count()
         mark_role(tk.Label(body, textvariable=self._count_var,
                  font=fns, bg=t["bg"], fg=dim),
                  "dim").pack(anchor=tk.W, pady=(0, 6))
@@ -659,9 +818,77 @@ class SlideshowPanel(tk.Frame):
             activebackground=t["bg"]).pack(anchor=tk.W, pady=(0, 8))
 
         mark_role(tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=460,
-                 text="Tip: images are added to the pool automatically "
-                      "whenever you save a wallpaper to the store."),
+                 justify=tk.LEFT,
+                 text="Tip: a folder picks up new images as you save them; "
+                      "a playlist only ever holds what you put in it."),
                   "dim").pack(anchor=tk.W)
+
+        # ── Quick preview ─────────────────────────────────────────────────────
+        ttk.Separator(body).pack(fill=tk.X, pady=(8, 6))
+
+        tk.Label(body, text="Quick preview", font=fnb,
+                 bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
+        mark_role(tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=460,
+                 justify=tk.LEFT,
+                 text="The same rotation, seconds apart, so you can see a "
+                      "folder or playlist without waiting for the schedule. "
+                      "QiGor drives this one itself, so it runs only while "
+                      "the app is open."),
+                  "dim").pack(anchor=tk.W, pady=(2, 4))
+
+        pr = tk.Frame(body, bg=t["bg"])
+        pr.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(pr, text="Every:", font=fnb, bg=t["bg"], fg=t["fg"],
+                 width=12, anchor=tk.W).pack(side=tk.LEFT)
+        self._psecs_var = tk.StringVar(value=saved_psecs)
+        if saved_psecs not in PREVIEW_SECONDS:
+            self._psecs_var.set("10")
+        ttk.Combobox(pr, textvariable=self._psecs_var, values=PREVIEW_SECONDS,
+                     width=5, state="readonly", font=fn).pack(side=tk.LEFT,
+                                                              padx=(4, 4))
+        tk.Label(pr, text="seconds", font=fn, bg=t["bg"],
+                 fg=t["fg"]).pack(side=tk.LEFT, padx=(0, 10))
+
+        c = BTN_COLORS["primary"]
+        self._btn_preview = tk.Button(pr, text="▶ Preview", font=fn,
+                  bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+                  command=self._start_preview)
+        self._btn_preview.pack(side=tk.LEFT, padx=(0, 4))
+        Tooltip(self._btn_preview,
+                "Start rotating now, at the interval on the left.\n"
+                "Changing that interval mid-preview takes effect\n"
+                "at the next image.\n\n"
+                "Not a scheduled task: Windows will not repeat one\n"
+                "more often than once a minute. This runs on QiGor's\n"
+                "own timer and leaves the scheduled slideshow's place\n"
+                "in its queue untouched.")
+
+        c = BTN_COLORS["danger"]
+        self._btn_preview_stop = tk.Button(pr, text="⏹ Stop preview", font=fn,
+                  bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+                  command=self._stop_preview, state="disabled")
+        self._btn_preview_stop.pack(side=tk.LEFT)
+        Tooltip(self._btn_preview_stop,
+                "End the preview. The scheduled slideshow,\n"
+                "if one is running, is unaffected either way.")
+
+        self._restore_var = tk.BooleanVar(value=saved_restore)
+        self._restore_cb = tk.Checkbutton(
+            body,
+            text="Put the wallpaper back when the preview stops",
+            variable=self._restore_var,
+            font=fn, bg=t["bg"], fg=t["fg"],
+            selectcolor=t["entry_bg"],
+            activebackground=t["bg"])
+        self._restore_cb.pack(anchor=tk.W, pady=(2, 2))
+
+        self._preview_var = tk.StringVar(value="")
+        self._preview_status = mark_role(tk.Label(
+            body, textvariable=self._preview_var, font=fns, anchor=tk.W,
+            justify=tk.LEFT, bg=t["bg"], fg=dim), "dim")
+        self._preview_status.pack(anchor=tk.W, pady=(0, 6))
+
+        self._on_source_change()
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -720,6 +947,72 @@ class SlideshowPanel(tk.Frame):
 
         threading.Thread(target=_fetch, daemon=True).start()
 
+    def refresh_playlists(self):
+        """The Playlists tab changed something — re-read the names."""
+        try:
+            names = playlist_names()
+            self._playlist_combo.config(values=names)
+            if self._playlist_var.get() not in names:
+                self._playlist_var.set(names[0] if names else "")
+            self._update_count()
+        except tk.TclError:
+            pass
+
+    def use_playlist(self, name):
+        """Point the slideshow at `name`. Called from the Playlists tab."""
+        self.refresh_playlists()
+        self._playlist_var.set(name)
+        self._source_var.set("playlist")
+        self._on_source_change()
+
+    def _edit_playlists(self):
+        if self._on_edit_playlists is not None:
+            self._on_edit_playlists()
+
+    def _on_source_change(self):
+        """Grey out whichever source is not in use, and recount."""
+        by_playlist = self._source_var.get() == "playlist"
+        for w in (self._folder_entry, self._browse_btn):
+            w.config(state="disabled" if by_playlist else "normal")
+        self._playlist_combo.config(
+            state="readonly" if by_playlist else "disabled")
+        self._update_count()
+
+    def _state_from_ui(self) -> dict:
+        """What the controls currently say, in the shape advance() wants."""
+        folder = self._folder_var.get().strip()
+        return {
+            "folder":       str(Path(folder)) if folder else "",
+            "source":       self._source_var.get(),
+            "playlist":     self._playlist_var.get(),
+            "interval_min": self._get_interval_min(),
+            "shuffle":      self._shuffle_var.get(),
+            "style":        self._style_var.get(),
+        }
+
+    def _check_pool(self) -> bool:
+        """Complain, once, about whatever would stop a rotation working."""
+        ui = self._state_from_ui()
+        if ui["source"] == "playlist":
+            if not ui["playlist"]:
+                messagebox.showerror(
+                    "No playlist",
+                    "Choose a playlist, or build one on the Playlists tab.",
+                    parent=self)
+                return False
+        elif not Path(ui["folder"]).exists():
+            messagebox.showerror(
+                "Folder not found",
+                "Folder does not exist:\n{}".format(ui["folder"]), parent=self)
+            return False
+        if not resolve_pool(ui):
+            messagebox.showerror(
+                "No images",
+                "No image files found in {}".format(describe_pool(ui)),
+                parent=self)
+            return False
+        return True
+
     def _browse_folder(self):
         d = filedialog.askdirectory(title="Select slideshow folder",
                                     initialdir=self._folder_var.get())
@@ -727,40 +1020,43 @@ class SlideshowPanel(tk.Frame):
             self._folder_var.set(d)
 
     def _update_count(self):
-        folder = Path(self._folder_var.get().strip())
-        n = len(get_images_in_folder(folder))
+        ui = self._state_from_ui()
+        if ui["source"] == "playlist" and not ui["playlist"]:
+            self._count_var.set(
+                "⚠  No playlist yet — build one on the Playlists tab.")
+            return
+        n = len(resolve_pool(ui))
+        where = ("playlist “{}”".format(ui["playlist"])
+                 if ui["source"] == "playlist" else "this folder")
         self._count_var.set(
-            "⚠  No images found in this folder." if n == 0
-            else "✔  {} image{} found.".format(n, "s" if n != 1 else ""))
+            "⚠  No images found in {}.".format(where) if n == 0
+            else "✔  {} image{} in {}.".format(
+                n, "s" if n != 1 else "", where))
 
     def _get_interval_min(self) -> int:
         label = self._interval_var.get()
         return next((val for lbl, val in INTERVAL_OPTIONS if lbl == label), 10)
 
     def _save_state_from_ui(self):
-        folder = Path(self._folder_var.get().strip())
-        state  = load_state()
-        if state.get("folder") != str(folder):
+        ui    = self._state_from_ui()
+        state = load_state()
+        # A different pool means the shuffled queue describes images that are
+        # no longer being shown; it has to be rebuilt rather than resumed.
+        if any(state.get(k) != ui[k] for k in ("folder", "source", "playlist")):
             state["queue"]       = []
             state["queue_index"] = 0
-        state["folder"]       = str(folder)
-        state["interval_min"] = self._get_interval_min()
-        state["shuffle"]      = self._shuffle_var.get()
-        state["style"]        = self._style_var.get()
+        state.update(ui)
         save_state(state)
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
     def _start(self):
-        folder = Path(self._folder_var.get().strip())
-        if not folder.exists():
-            messagebox.showerror("Folder not found",
-                "Folder does not exist:\n{}".format(folder), parent=self)
+        if not self._check_pool():
             return
-        if not get_images_in_folder(folder):
-            messagebox.showerror("No images",
-                "No image files found in:\n{}".format(folder), parent=self)
-            return
+        # Two things rotating the wallpaper at once reads as a bug. The
+        # scheduled slideshow is the one that was just asked for.
+        if self._previewing:
+            self._stop_preview()
 
         self._save_state_from_ui()
         py_path = find_python_exe()
@@ -811,14 +1107,7 @@ class SlideshowPanel(tk.Frame):
                 "No slideshow task was scheduled.", parent=self)
 
     def _next_now(self):
-        folder = Path(self._folder_var.get().strip())
-        if not folder.exists():
-            messagebox.showerror("Folder not found",
-                "Folder does not exist:\n{}".format(folder), parent=self)
-            return
-        if not get_images_in_folder(folder):
-            messagebox.showerror("No images",
-                "No image files found in:\n{}".format(folder), parent=self)
+        if not self._check_pool():
             return
         self._save_state_from_ui()
         try:
@@ -826,6 +1115,133 @@ class SlideshowPanel(tk.Frame):
             self._finish("next")
         except Exception as e:
             messagebox.showerror("Error", str(e), parent=self)
+
+    # ── Quick preview ─────────────────────────────────────────────────────────
+
+    def _preview_secs(self) -> int:
+        try:
+            return max(1, int(self._psecs_var.get()))
+        except (ValueError, tk.TclError):
+            return 10
+
+    # What a preview is allowed to write. It rotates every few seconds, and
+    # advance() narrates every one of them — a minute of previewing would bury
+    # the scheduled history that 📋 Log exists to show.
+    _PREVIEW_LOG_KEEPS = ("started", "stopped", "restored", "could not",
+                          "ERROR", "Skipping missing")
+
+    def _preview_log(self, msg):
+        """Into the slideshow's own log, so 📋 Log shows previews too."""
+        import datetime as _dt
+        text = str(msg)
+        if not any(k in text for k in self._PREVIEW_LOG_KEEPS):
+            return
+        try:
+            HELPERS_DIR.mkdir(parents=True, exist_ok=True)
+            with open(HELPERS_DIR / "_slideshow_log.txt", "a",
+                      encoding="utf-8") as f:
+                f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        + "  [PREVIEW] " + text + "\n")
+        except OSError:
+            pass
+
+    def preview_running(self) -> bool:
+        return self._previewing
+
+    def _start_preview(self):
+        if self._previewing or not self._check_pool():
+            return
+        self._cfg.set("slideshow_preview_secs", self._preview_secs())
+        self._cfg.set("slideshow_preview_restore", self._restore_var.get())
+        # A copy of the settings with a queue of its own. Sharing the saved
+        # queue would leave the scheduled rotation wherever the preview
+        # stopped, and skipping the images it had already shown.
+        self._preview_state = dict(self._state_from_ui(),
+                                   queue=[], queue_index=0)
+        # Restored at the panel's current display style: the registry keeps
+        # the old style but this app has never had a reason to read it back.
+        self._preview_restore = (get_current_wallpaper_path()
+                                 if self._restore_var.get() else None)
+        self._previewing   = True
+        self._preview_n    = 0
+        self._preview_left = 0
+        self._preview_last = ""
+        self._btn_preview.config(state="disabled")
+        self._btn_preview_stop.config(state="normal")
+        self._preview_log("started — every {}s from {}".format(
+            self._preview_secs(),
+            describe_pool(self._preview_state).replace("\n", " ")))
+        self._finish("preview-started")
+        self._preview_tick()
+
+    def _preview_tick(self):
+        """One second of the preview: count down, and rotate at zero."""
+        self._preview_after = None
+        if not self._previewing:
+            return
+        if self._preview_left <= 0:
+            # Re-read the controls each time round: shuffle, style, and the
+            # source itself follow what is set above, the way the interval
+            # already did. Only the queue and the place in it belong to the
+            # preview — and advance() rebuilds those by itself as soon as the
+            # pool underneath them changes.
+            self._preview_state.update(self._state_from_ui())
+            chosen, err = advance(self._preview_state, force=True,
+                                  persist=False, log=self._preview_log)
+            if err:
+                self._stop_preview()
+                messagebox.showerror("Preview stopped", err, parent=self)
+                return
+            self._preview_n   += 1
+            self._preview_last = chosen.name if chosen else "?"
+            self._preview_left = self._preview_secs()
+        self._preview_var.set(
+            "▶  Previewing — {}  ({} shown)  •  next in {}s".format(
+                self._preview_last, self._preview_n, max(self._preview_left, 0)))
+        self._preview_left -= 1
+        try:
+            self._preview_after = self.after(1000, self._preview_tick)
+        except tk.TclError:
+            self._previewing = False
+
+    def _stop_preview(self):
+        if not self._previewing:
+            return
+        self._previewing = False
+        if self._preview_after is not None:
+            try:
+                self.after_cancel(self._preview_after)
+            except (tk.TclError, ValueError):
+                pass
+            self._preview_after = None
+        try:
+            self._btn_preview.config(state="normal")
+            self._btn_preview_stop.config(state="disabled")
+        except tk.TclError:
+            pass
+        put_back = ""
+        # The tick-box is read again here, not only at the start: seeing an
+        # image you want to keep is a good reason to untick it mid-preview.
+        if self._preview_restore and self._restore_var.get():
+            try:
+                apply_wallpaper(self._preview_restore, self._style_var.get())
+                put_back = "  •  wallpaper put back"
+                self._preview_log(
+                    "restored " + Path(self._preview_restore).name)
+            except Exception as e:
+                self._preview_log("could not restore the wallpaper: {}".format(e))
+        self._preview_restore = None
+        self._preview_log("stopped after {} image(s).".format(self._preview_n))
+        try:
+            self._preview_var.set("Preview stopped after {} image{}.{}".format(
+                self._preview_n, "" if self._preview_n == 1 else "s", put_back))
+        except tk.TclError:
+            pass
+        self._finish("preview-stopped")
+
+    def stop_preview(self):
+        """Public: the app closing ends a preview."""
+        self._stop_preview()
 
     def _test_task(self):
         """Trigger the scheduled task via schtasks /run and then open the log."""
@@ -883,31 +1299,35 @@ class SlideshowPanel(tk.Frame):
         self._view_log()
 
     def _view_log(self):
+        """
+        Print the recent rotation history into the app's console.
+
+        It used to open a window of its own — which landed on top of the
+        console at the moment the console was reporting what the slideshow had
+        just done. That is the same thing that made these panels stop being
+        dialogs; the log had no reason to stay one.
+        """
         log_path = HELPERS_DIR / "_slideshow_log.txt"
         if not log_path.exists():
-            messagebox.showinfo("No Log",
-                "No log file yet.\nExpected: {}".format(log_path), parent=self)
+            self._console_log(
+                "No slideshow log yet — expected: {}".format(log_path), "dim")
             return
-        content = log_path.read_text(encoding="utf-8", errors="replace")
-        if not content.strip():
-            messagebox.showinfo("Log Empty", "Log file is empty.", parent=self)
+        try:
+            text = log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            self._console_log(
+                "Could not read the slideshow log: {}".format(exc), "red")
             return
-        t = THEMES.get(self._cfg.get("theme"), THEMES["dark"])
-        dlg = tk.Toplevel(self)
-        dlg.title("Slideshow Log")
-        dlg.geometry("700x400")
-        dlg.grab_set()
-        dlg.configure(bg=t["bg"])
-        txt = scrolledtext.ScrolledText(dlg, font=scaling.font("Consolas", 9),
-                                        wrap=tk.WORD, bg=t["entry_bg"], fg=t["fg"])
-        txt.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        txt.insert(tk.END, content)
-        txt.see(tk.END)
-        txt.config(state=tk.DISABLED)
-        c = BTN_COLORS["danger"]
-        br = tk.Frame(dlg, bg=t["bg"])
-        br.pack(fill=tk.X, padx=8, pady=(0, 8))
-        tk.Button(br, text="Clear Log", bg=c["bg"], fg=c["fg"],
-                  command=lambda: (log_path.unlink(), dlg.destroy())).pack(side=tk.LEFT)
-        tk.Button(br, text="Close", bg=t["btn_bg"], fg=t["btn_fg"],
-                  command=dlg.destroy).pack(side=tk.RIGHT)
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            self._console_log("The slideshow log is empty.", "dim")
+            return
+        shown = lines[-self.LOG_TAIL:]
+        self._console_log("─" * 52, "dim")
+        self._console_log("Slideshow log — {}{} line{}".format(
+            "last {} of ".format(len(shown)) if len(shown) < len(lines) else "",
+            len(lines), "" if len(lines) == 1 else "s"), "bold")
+        self._console_log("   {}".format(log_path), "dim")
+        for line in shown:
+            self._console_log("   " + line, _log_tag(line))
+        self._console_log("─" * 52, "dim")
