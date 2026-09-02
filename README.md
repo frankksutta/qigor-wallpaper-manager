@@ -35,6 +35,10 @@ General tab, tick the **Unblock** checkbox → **OK**.
 downloads the current release, checks it against the published SHA-256, unpacks
 it, and opens the installer.
 
+It reads the ~1 KB version manifest before the 24 MB installer, so if you already
+have the latest build it tells you and downloads nothing further — worth knowing
+on a metered connection. Run it as `QiGor-Setup.cmd /force` to reinstall anyway.
+
 If you skipped step 2 you will instead get **"Windows protected your PC"**.
 Click **More info → Run anyway**, or go back and unblock the file.
 
@@ -78,10 +82,20 @@ checksum before anything is replaced.
 
 ## Uninstall
 
-**Settings ▸ Apps ▸ Installed apps ▸ QiGor Wallpaper Manager ▸ Uninstall**, or
-run `Uninstall.cmd` in the install folder. Either one stops the slideshow and
-reminder tasks first. Your settings and saved wallpapers are kept unless you tick
-the box to remove them.
+Any of these — they all run the same uninstaller:
+
+- **Settings ▸ Apps ▸ Installed apps ▸ QiGor Wallpaper Manager ▸ Uninstall**
+- **Help ▸ Uninstall QiGor…** inside the app
+- `Uninstall.cmd` in the install folder
+- `winget uninstall "QiGor Wallpaper Manager"`
+
+It stops the slideshow and reminder tasks first, and asks a running copy to close
+before removing anything, so it can never half-delete itself. Your settings and
+saved wallpapers are kept unless you tick the box to remove them.
+
+Every install and uninstall is appended to
+`%USERPROFILE%\.qigor-wallpaper\install_log.txt`, so you can always read what
+happened even if a window closed before you finished reading it.
 
 ---
 

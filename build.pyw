@@ -83,6 +83,9 @@ SETUP_DEPS     = ["pillow", "tkinterdnd2"]
 # Copied into the zip verbatim. installer/ is what makes the zip installable;
 # without it the folder still runs, it just cannot install itself.
 SETUP_SRC_DIRS = ("app", "installer", "assets")
+# Must match installer.paths.APP_ID — QiGor-Setup.cmd reads the installed
+# version.json from this folder to decide whether a download is needed.
+INSTALL_DIR_NAME = "QiGorWallpaperManager"
 
 # Legacy PyInstaller leavings — still cleaned up so an old checkout tidies itself.
 LEGACY_ARTIFACTS = (SCRIPT_DIR / "build",
@@ -216,7 +219,7 @@ def release_body(man: dict) -> str:
              notes=(man.get("notes") or "").strip() or "No notes were published.")
 
 
-def web_setup_cmd() -> str:
+def web_setup_cmd(size_mb: float = 24.0) -> str:
     """
     The text of QiGor-Setup.cmd — a standalone one-click web installer.
 
@@ -228,7 +231,9 @@ def web_setup_cmd() -> str:
 
     It never leaves a zip lying around for the user to manage: download,
     verify, unpack and install all happen under %TEMP%, which is wiped on the
-    way out.
+    way out. And it reads the ~1 KB manifest before the 24 MB zip, so someone
+    already on the current build — or on a metered connection — is told so
+    without paying for the download to find out.
     """
     return (
         "@echo off\r\n"
@@ -239,6 +244,7 @@ def web_setup_cmd() -> str:
         'set "ZIPNAME={zipname}"\r\n'
         'set "WORK=%TEMP%\\qigor-setup"\r\n'
         'set "PAYLOAD=%WORK%\\x\\{payload}"\r\n'
+        'set "INSTALLED=%LOCALAPPDATA%\\Programs\\{appid}\\version.json"\r\n'
         "\r\n"
         ":: Full paths, never a bare name on PATH. Git for Windows puts its own\r\n"
         ":: GNU tar ahead of System32 on PATH, and GNU tar cannot read a zip at\r\n"
@@ -252,8 +258,8 @@ def web_setup_cmd() -> str:
         "echo(\r\n"
         "echo   QiGor Wallpaper Manager\r\n"
         "echo   -----------------------\r\n"
-        "echo   Downloads the latest release and installs it for your user\r\n"
-        "echo   account. No administrator password is needed.\r\n"
+        "echo   Installs the latest release for your user account.\r\n"
+        "echo   No administrator password is needed.\r\n"
         "echo(\r\n"
         "\r\n"
         'if not exist "%CURL%" goto :nohelper\r\n'
@@ -264,6 +270,36 @@ def web_setup_cmd() -> str:
         'mkdir "%WORK%\\x" >nul 2>&1\r\n'
         'if not exist "%WORK%\\x" goto :fail\r\n'
         "\r\n"
+        ":: The manifest is about a kilobyte. Reading it before the zip means a\r\n"
+        ":: machine that is already current never pays for a {size:.0f} MB download\r\n"
+        ":: just to be told it had the file already.\r\n"
+        "echo   Checking the latest version...\r\n"
+        '"%CURL%" -L --fail --silent --show-error -o "%WORK%\\version.json" "%BASE%/version.json"\r\n'
+        "if errorlevel 1 goto :dlfail\r\n"
+        'call :readbuild "%WORK%\\version.json" NEWVER\r\n'
+        "if not defined NEWVER goto :fail\r\n"
+        'set "HAVE="\r\n'
+        'if exist "%INSTALLED%" call :readbuild "%INSTALLED%" HAVE\r\n'
+        "\r\n"
+        'if /i "%~1"=="/force" goto :download\r\n'
+        "if not defined HAVE (\r\n"
+        "    echo   Latest version is %NEWVER%. Nothing is installed yet.\r\n"
+        "    goto :download\r\n"
+        ")\r\n"
+        'if not "%HAVE%"=="%NEWVER%" (\r\n'
+        "    echo   Installed %HAVE%  -  latest is %NEWVER%. Updating.\r\n"
+        "    goto :download\r\n"
+        ")\r\n"
+        "echo(\r\n"
+        "echo   You already have version %HAVE%, and that is the latest one.\r\n"
+        "echo   Nothing needs downloading.\r\n"
+        "echo(\r\n"
+        'set "ANS=n"\r\n'
+        'set /p "ANS=  Reinstall it anyway? That downloads {size:.0f} MB. [y/N] "\r\n'
+        'if /i not "%ANS%"=="y" goto :uptodate\r\n'
+        "echo(\r\n"
+        "\r\n"
+        ":download\r\n"
         "echo   Downloading the installer...\r\n"
         '"%CURL%" -L --fail --progress-bar -o "%WORK%\\%ZIPNAME%" "%BASE%/%ZIPNAME%"\r\n'
         "if errorlevel 1 goto :dlfail\r\n"
@@ -284,7 +320,7 @@ def web_setup_cmd() -> str:
         # unspaced on newer ones; stripping spaces covers both.
         'for /f "usebackq skip=1 delims=" %%h in ("%WORK%\\hash.txt") do '
         'if not defined GOT set "GOT=%%h"\r\n'
-        'if not defined GOT goto :fail\r\n'
+        "if not defined GOT goto :fail\r\n"
         'set "GOT=%GOT: =%"\r\n'
         'if /i not "%GOT%"=="%WANT%" goto :badhash\r\n'
         "echo   Checksum verified.\r\n"
@@ -298,8 +334,37 @@ def web_setup_cmd() -> str:
         # Called directly, not via start, so cmd waits for the window to close
         # before wiping the folder it is running from.
         '"%PAYLOAD%\\runtime\\pythonw.exe" "%PAYLOAD%\\installer\\install.py"\r\n'
+        'set "RC=%errorlevel%"\r\n'
         'rmdir /s /q "%WORK%" >nul 2>&1\r\n'
+        'if not "%RC%"=="0" goto :installfail\r\n'
+        "echo(\r\n"
+        "echo   Setup finished. This window closes by itself.\r\n"
+        "timeout /t 8 /nobreak >nul 2>&1\r\n"
         "exit /b 0\r\n"
+        "\r\n"
+        ":: Read \"build\" out of a version.json into the variable named by %%2.\r\n"
+        ":readbuild\r\n"
+        "setlocal\r\n"
+        'set "V="\r\n'
+        'for /f "usebackq tokens=2 delims=:," %%a in (`findstr /c:"\\"build\\"" "%~1"`) do '
+        'if not defined V set "V=%%a"\r\n'
+        'set "V=%V: =%"\r\n'
+        'set "V=%V:"=%"\r\n'
+        'endlocal & set "%~2=%V%"\r\n'
+        "goto :eof\r\n"
+        "\r\n"
+        ":uptodate\r\n"
+        'rmdir /s /q "%WORK%" >nul 2>&1\r\n'
+        "echo   Nothing was downloaded and nothing was changed.\r\n"
+        "echo   To reinstall regardless, run this again as:  %~nx0 /force\r\n"
+        "goto :end\r\n"
+        "\r\n"
+        ":installfail\r\n"
+        "echo(\r\n"
+        "echo   The installer did not finish (code %RC%).\r\n"
+        "echo   What happened was written to:\r\n"
+        "echo     %USERPROFILE%\\.qigor-wallpaper\\install_log.txt\r\n"
+        "goto :end\r\n"
         "\r\n"
         ":nohelper\r\n"
         "echo(\r\n"
@@ -336,8 +401,8 @@ def web_setup_cmd() -> str:
         "echo(\r\n"
         "pause\r\n"
         "exit /b 1\r\n"
-    ).format(user=GITHUB_USER, repo=GITHUB_REPO,
-             zipname=SETUP_ZIP.name, payload=SETUP_NAME)
+    ).format(user=GITHUB_USER, repo=GITHUB_REPO, appid=INSTALL_DIR_NAME,
+             zipname=SETUP_ZIP.name, payload=SETUP_NAME, size=size_mb)
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -1330,7 +1395,8 @@ class App:
         # download in batch, where picking a value out of JSON is fragile.
         SHA_TXT.write_text("{}  {}\n".format(manifest["sha256"], SETUP_ZIP.name),
                            encoding="ascii")
-        WEB_SETUP_CMD.write_text(web_setup_cmd(), encoding="ascii")
+        WEB_SETUP_CMD.write_text(
+            web_setup_cmd(manifest["size"] / 1e6), encoding="ascii")
         self._log("✅  SHA256.txt + QiGor-Setup.cmd written", "success")
 
         raw     = sum(f.stat().st_size for f in files)

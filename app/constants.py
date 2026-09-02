@@ -6,7 +6,7 @@ from pathlib import Path
 
 APP_NAME    = "QiGor Wallpaper Manager"
 APP_VERSION = "0.8"
-APP_BUILD   = "0.8.1"   # bump this every patch
+APP_BUILD   = "0.8.2"   # bump this every patch
 APP_SLUG    = "qigor-wallpaper"
 RECENT_MAX  = 8
 

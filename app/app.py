@@ -1072,6 +1072,37 @@ class App:
         root = payload_root()
         return not is_installed_copy(root) and validate_payload(root) is None
 
+    def _is_installed_copy(self) -> bool:
+        try:
+            from installer.paths import is_installed_copy
+            return is_installed_copy()
+        except Exception:
+            return False
+
+    def _uninstall(self):
+        """
+        Open the uninstaller, then close, since it has to remove the folder this
+        process is running from. A separate process for the same reason the
+        installer is one: it builds its own Tk root.
+        """
+        from installer.paths import payload_root
+        root = payload_root()
+        if not messagebox.askokcancel(
+                "Uninstall",
+                "This closes QiGor and opens the uninstaller.\n\n"
+                "You can also reach it any time from\n"
+                "Settings ▸ Apps ▸ Installed apps.",
+                parent=self.root):
+            return
+        try:
+            subprocess.Popen([sys.executable, str(root / "installer" / "uninstall.py")],
+                             cwd=str(Path.home()), close_fds=True)
+        except Exception as e:
+            messagebox.showerror("Could not start the uninstaller", str(e),
+                                 parent=self.root)
+            return
+        self.root.after(400, self._on_close)
+
     def _install_to_pc(self):
         """Hand off to the installer window. A separate process, because it
         builds its own Tk root."""

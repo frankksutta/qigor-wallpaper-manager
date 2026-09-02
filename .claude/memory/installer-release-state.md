@@ -25,7 +25,7 @@ and install instructions are generated, never hand-edited. Don't edit the
 release body on github.com; change `release_body()` in `build.pyw` or
 `RELEASE_NOTES.md` and re-upload, or the next upload silently reverts it.
 
-**Published 2026-09-01: build 0.8.1**, verified by downloading the live
+**Published 2026-09-01: build 0.8.2**, verified by downloading the live
 `QiGor-Setup.cmd` and running it end to end. The old PyInstaller `.exe` asset is
 deleted from the release.
 

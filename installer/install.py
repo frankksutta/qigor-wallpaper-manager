@@ -60,8 +60,9 @@ def run_silent(argv) -> int:
                             desktop="--no-desktop" not in argv,
                             log=log,
                             wait_pid=int(wait_pid) if wait_pid else None)
-    except Exception:
+    except Exception as e:
         # No console and no window in silent mode, so leave a trail on disk.
+        core.note_failure("silent install", e)
         crash = Path.home() / ".qigor-wallpaper" / "install_error.txt"
         crash.parent.mkdir(parents=True, exist_ok=True)
         crash.write_text("\n".join(lines) + "\n\n" + traceback.format_exc(),
@@ -218,8 +219,11 @@ class InstallerWindow:
             root = core.install(self.src, desktop=self.v_desktop.get(),
                                 log=self.log)
         except Exception as e:
+            path = core.note_failure("install", e)
             self.log("")
             self.log("Install failed: {}".format(e), "err")
+            self.log("")
+            self.log("Written to {}".format(path))
             self.root.after(0, lambda: self.btn.configure(
                 state="normal", text="Retry"))
             self.busy = False

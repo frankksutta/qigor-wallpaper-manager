@@ -40,6 +40,10 @@ def build_ui(app):
     if app._can_install_to_pc():
         help_menu.add_command(label="Install on this PC…",
                               command=app._install_to_pc)
+    # Settings ▸ Apps is the standard route, but people look for the uninstaller
+    # in the app they want rid of, so offer it here too.
+    if app._is_installed_copy():
+        help_menu.add_command(label="Uninstall QiGor…", command=app._uninstall)
     help_menu.add_separator()
     help_menu.add_command(label="About   F1", command=app._show_about)
 

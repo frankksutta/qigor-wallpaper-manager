@@ -106,6 +106,7 @@ class UninstallWindow:
                            log=self.log)
         except RuntimeError as e:
             # Nothing has been removed at this point, so the retry is safe.
+            core.note_failure("uninstall", e)
             self.log("")
             self.log(str(e))
             self.root.after(0, lambda: (
@@ -128,7 +129,8 @@ if __name__ == "__main__":
             core.uninstall(payload_root(),
                            remove_settings="--purge" in sys.argv,
                            log=lambda *_: None)
-        except RuntimeError:
+        except RuntimeError as e:
+            core.note_failure("silent uninstall", e)
             sys.exit(1)
         sys.exit(0)
     import tkinter as tk

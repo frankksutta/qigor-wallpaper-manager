@@ -90,6 +90,47 @@ def validate_payload(payload: Path) -> "str | None":
 # ── Process helpers ───────────────────────────────────────────────────────────
 
 INSTANCE_LOCK = Path.home() / ".qigor-wallpaper" / "instance.lock"
+LOG_FILE      = Path.home() / ".qigor-wallpaper" / "install_log.txt"
+
+
+def _tee(log, what: str):
+    """
+    Wrap a log callable so everything it prints is also appended to disk.
+
+    The installer window can be closed and the setup console closes itself the
+    moment it finishes, so without a file there is no way to find out
+    afterwards what happened — least of all for a failure the user only half
+    saw go past.
+    """
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(LOG_FILE, "a", encoding="utf-8")
+        handle.write("\n===== {}  {} =====\n".format(
+            datetime.now().isoformat(timespec="seconds"), what))
+    except OSError:
+        return log            # a log we cannot write is not worth failing over
+
+    def tee(msg=""):
+        try:
+            handle.write(str(msg) + "\n")
+            handle.flush()
+        except OSError:
+            pass
+        log(msg)
+    return tee
+
+
+def note_failure(what: str, detail) -> Path:
+    """Record an aborted install or uninstall, and return the log's path so the
+    caller can tell the user where to look."""
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write("{}  {} FAILED: {}\n".format(
+                datetime.now().isoformat(timespec="seconds"), what, detail))
+    except OSError:
+        pass
+    return LOG_FILE
 
 
 def is_running() -> bool:
@@ -313,6 +354,7 @@ def install(payload: Path, target: "Path | None" = None, desktop: bool = True,
     """
     payload = Path(payload).resolve()
     target  = Path(target).resolve() if target else install_root()
+    log = _tee(log, "install {} → {}".format(payload.name, target))
 
     err = validate_payload(payload)
     if err:
@@ -662,6 +704,7 @@ def uninstall(target: "Path | None" = None, remove_settings: bool = False,
     runs under Smart App Control without issue.
     """
     target = Path(target).resolve() if target else install_root()
+    log = _tee(log, "uninstall {}".format(target))
 
     log("Removing {}…".format(DISPLAY_NAME))
 
