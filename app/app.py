@@ -75,14 +75,12 @@ class App:
         self._preview_raw   = None
         self._dnd_available = False
 
-        # Slideshow button label reflects running state
-        slideshow_lbl = "🖼 Slideshow ✔" if slideshow_is_scheduled() else "🖼 Slideshow"
-        self._slideshow_lbl_value = slideshow_lbl
-
         STORE_DIR.mkdir(parents=True, exist_ok=True)
         HELPERS_DIR.mkdir(parents=True, exist_ok=True)
 
         self._build_ui()
+        self._mark_tab(self._slideshow_panel, slideshow_is_scheduled())
+        self._mark_tab(self._reminder_panel, bool(self.cfg.get("reminder_set")))
         self.font_size = scaling.apply(self.cfg.get("font_size"))
         self._apply_theme()
         self._bind_shortcuts()
@@ -894,26 +892,63 @@ class App:
             except Exception:
                 continue
 
-    def _show_current_lock_screen(self):
+    def _show_lock_preview(self):
+        """
+        Load the current lock screen into the Lock tab's own preview.
+
+        Deliberately not the wallpaper preview: that one composites the image
+        onto a mock desktop at the chosen wallpaper style, which says nothing
+        useful about a lock screen. This shows the image as it is.
+        """
         path_str, source = wp.find_current_lock_screen_image()
         if not path_str:
+            self._lock_info_var.set("")
+            self._lock_preview_label.config(
+                image="", text="No lock screen image found.\n"
+                               "Windows may be using a solid colour, "
+                               "or access is restricted.")
             self._log("⚠  No lock screen image found.", "yellow")
-            self._log("   Windows may be using a solid colour, or access is restricted.", "dim")
             return
         self._log(f"Current lock screen: {Path(path_str).name}", "cyan")
         self._log(f"  Source: {source}", "dim")
-
         if not PIL_AVAILABLE:
+            self._lock_preview_label.config(
+                image="", text="Preview needs Pillow:  pip install pillow")
             return
         try:
-            img = Image.open(path_str).convert("RGB")
-            self._preview_raw = img
-            self.root.after(0, self._reflow_preview)
-            self._preview_info_var.set(
-                f"Lock screen  •  {img.width}×{img.height}  •  {source}")
+            self._lock_preview_raw = Image.open(path_str).convert("RGB")
         except Exception as e:
-            self._log(f"⚠  Could not open image for preview: {e}", "yellow")
-            self._log(f"   Path: {path_str}", "dim")
+            self._lock_preview_label.config(
+                image="", text=f"Could not open the image:\n{e}")
+            self._log(f"⚠  Could not open lock screen image: {e}", "yellow")
+            return
+        self._lock_info_var.set("{}  •  {}×{}  •  {}".format(
+            Path(path_str).name, self._lock_preview_raw.width,
+            self._lock_preview_raw.height, source))
+        self._reflow_lock_preview()
+
+    def _reflow_lock_preview(self):
+        """Fit the lock screen image to the pane, keeping its aspect ratio."""
+        img = getattr(self, "_lock_preview_raw", None)
+        if img is None:
+            return
+        lbl = self._lock_preview_label
+        pw, ph = lbl.winfo_width() - 8, lbl.winfo_height() - 8
+        if pw < 20 or ph < 20:
+            self.root.after(100, self._reflow_lock_preview)
+            return
+        scale = min(pw / img.width, ph / img.height)
+        size = (max(1, int(img.width * scale)), max(1, int(img.height * scale)))
+        photo = ImageTk.PhotoImage(img.resize(size, Image.LANCZOS))
+        self._lock_preview_img = photo      # a dropped reference blanks the label
+        lbl.config(image=photo, text="")
+
+    def _on_lock_preview_resize(self, _event):
+        if getattr(self, "_lock_preview_raw", None) is None:
+            return
+        if hasattr(self, "_lock_resize_after"):
+            self.root.after_cancel(self._lock_resize_after)
+        self._lock_resize_after = self.root.after(80, self._reflow_lock_preview)
 
     # ── Windows Sources menu ──────────────────────────────────────────────────
 
@@ -991,6 +1026,20 @@ class App:
         except (tk.TclError, AttributeError):
             pass
 
+    def _mark_tab(self, widget, active: bool):
+        """
+        Put a ✔ on a tab while its feature is scheduled.
+
+        The toolbar used to carry this on a button that did nothing but select
+        the tab next to it. On the tab itself it is in the one place that is
+        always visible, whichever tab you are looking at.
+        """
+        try:
+            base = self._notebook.tab(widget, "text").replace("✔", "").rstrip()
+            self._notebook.tab(widget, text=base + (" ✔  " if active else "  "))
+        except (tk.TclError, AttributeError):
+            pass
+
     def _show_slideshow_tab(self):
         self._select_tab(self._slideshow_panel)
 
@@ -1008,6 +1057,7 @@ class App:
             return
         if current is getattr(self, "_slideshow_panel", None):
             current._refresh_status()
+            self._mark_tab(current, slideshow_is_scheduled())
 
     def _show_reminder_tab(self):
         self._select_tab(self._reminder_panel)
@@ -1015,10 +1065,10 @@ class App:
     def _on_slideshow_result(self, result):
         """Called by the Slideshow tab after an action. Nothing is waited on."""
         if result == "started":
-            self._slideshow_btn.config(text="🖼 Slideshow ✔")
+            self._mark_tab(self._slideshow_panel, True)
             self._log("Wallpaper slideshow started.", "green")
         elif result == "stopped":
-            self._slideshow_btn.config(text="🖼 Slideshow")
+            self._mark_tab(self._slideshow_panel, False)
             self._log("Wallpaper slideshow stopped.", "yellow")
         elif result == "next":
             from .slideshow import load_state as ss_load_state
@@ -1034,11 +1084,11 @@ class App:
         """Called by the Reminder tab after an action."""
         if result == "set":
             self.cfg.set("reminder_set", True)
-            self._remind_btn.config(text="⏰ Reminder ✔")
+            self._mark_tab(self._reminder_panel, True)
             self._log("Wallpaper reminder scheduled.", "green")
         elif result == "removed":
             self.cfg.set("reminder_set", False)
-            self._remind_btn.config(text="⏰ Set Reminder")
+            self._mark_tab(self._reminder_panel, False)
             self._log("Wallpaper reminder removed.", "yellow")
 
     def _show_reminder_notification(self):
@@ -1276,8 +1326,13 @@ class App:
             except Exception: break
         try:
             wtype = widget.winfo_class()
-            if wtype in ("Frame", "Labelframe"):
+            if wtype == "Frame":
                 widget.configure(bg=t["bg"])
+            elif wtype == "Labelframe":
+                # fg matters: a LabelFrame draws its own title, and left alone
+                # that title keeps the system default — near-black text on the
+                # dark theme, which is what made every pane heading unreadable.
+                widget.configure(bg=t["bg"], fg=t["fg"])
             elif wtype == "Label":
                 widget.configure(bg=t["bg"], fg=t["fg"])
             elif wtype == "Entry":

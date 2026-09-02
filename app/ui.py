@@ -93,14 +93,23 @@ def _build_lock_tab(app, parent):
     cur_btn = tk.Button(row, text="🔒  Show Current", height=2,
         bg=c["bg"], fg=c["fg"], activebackground=c["active"],
         font=scaling.font("Segoe UI", 10),
-        # The preview pane lives on the Wallpaper tab, so go there too —
-        # otherwise this loads an image the user cannot see.
-        command=lambda: (app._show_current_lock_screen(),
-                         app._select_tab(app._tab_wallpaper)))
+        command=app._show_lock_preview)
     cur_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
     Tooltip(cur_btn,
-            "Load the lock screen image Windows is using now into the\n"
-            "Preview pane, and switch to the Wallpaper tab to show it.")
+            "Show the image Windows is using as the lock screen now,\n"
+            "in the preview below.")
+
+    prev = tk.LabelFrame(body, text="  Lock screen preview  ")
+    prev.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
+    app._lock_preview_label = tk.Label(
+        prev, relief=tk.SUNKEN, font=scaling.font("Segoe UI", 9),
+        text="Click “Show Current” to see the lock screen Windows is using,\n"
+             "or set one above.")
+    app._lock_preview_label.pack(fill=tk.BOTH, expand=True, padx=6, pady=(6, 2))
+    app._lock_preview_label.bind("<Configure>", app._on_lock_preview_resize)
+    app._lock_info_var = tk.StringVar(value="")
+    tk.Label(prev, textvariable=app._lock_info_var, anchor=tk.CENTER,
+             font=scaling.font("Segoe UI", 8)).pack(fill=tk.X, padx=6, pady=(0, 4))
 
 
 def build_ui(app):
@@ -222,34 +231,10 @@ def build_ui(app):
             "• Built-in Windows wallpapers\n"
             "• Lock screen images")
 
-    c = BTN_COLORS["success"]
-    remind_lbl = "⏰ Reminder ✔" if app.cfg.get("reminder_set") else "⏰ Set Reminder"
-    app._remind_btn = tk.Button(toolbar, text=remind_lbl,
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              command=app._show_reminder_tab)
-    app._remind_btn.pack(side=tk.LEFT, padx=(4, 2))
-    Tooltip(app._remind_btn,
-            "Schedule a gentle Windows notification to remind you\n"
-            "to change your wallpaper — daily, weekly, or every N days.\n\n"
-            "Uses Windows Task Scheduler (no background process).")
-
-    c = BTN_COLORS["primary"]
-    slideshow_lbl = getattr(app, "_slideshow_lbl_value", "🖼 Slideshow")
-    app._slideshow_btn = tk.Button(toolbar, text=slideshow_lbl,
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              command=app._show_slideshow_tab)
-    app._slideshow_btn.pack(side=tk.LEFT, padx=(4, 2))
-    Tooltip(app._slideshow_btn,
-            "Auto-rotate wallpapers from your store folder.\n"
-            "Uses Windows Task Scheduler — no background process.\n"
-            "Images are shuffled and cycle through before repeating.")
-
-    clr_btn = tk.Button(toolbar, text="Clear Log", command=app._clear_log)
-    clr_btn.pack(side=tk.RIGHT)
-    Tooltip(clr_btn, "Clear the log console.  Ctrl+L")
-    about_btn = tk.Button(toolbar, text="About", command=app._show_about)
-    about_btn.pack(side=tk.RIGHT, padx=(4, 0))
-    Tooltip(about_btn, f"About {APP_NAME}  (F1)")
+    # Reminder and Slideshow are tabs of their own now, and each carries its
+    # own ✔ when active — a button that only selected the tab beside it was
+    # saying the same thing twice. About lives on the Help menu (and F1), and
+    # Clear Log moved down beside the log it clears.
 
     # ── Main PanedWindow (vertical) ───────────────────────────────────────────
     app._main_pane = tk.PanedWindow(root, orient=tk.VERTICAL,
@@ -614,6 +599,11 @@ def build_ui(app):
     console_hdr.pack(fill=tk.X)
     tk.Label(console_hdr, text="Log",
              font=scaling.font("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
+    clr_btn = tk.Button(console_hdr, text="Clear Log", command=app._clear_log,
+                        font=scaling.font("Segoe UI", 8), padx=6)
+    clr_btn.pack(side=tk.RIGHT, padx=(8, 0))
+    Tooltip(clr_btn, "Clear the log console.  Ctrl+L")
+
     app._autoscroll_var = tk.BooleanVar(value=app.cfg.get("autoscroll"))
     tk.Checkbutton(console_hdr, text="Auto-scroll",
                    variable=app._autoscroll_var,
