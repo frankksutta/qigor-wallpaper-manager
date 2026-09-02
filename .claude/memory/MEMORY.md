@@ -5,6 +5,7 @@
      machines. NEVER delete/recurse the junction path -- that destroys the real store.
      Set up 2026-08-14; full recipe is in the debabel store: shared-memory-across-accounts.md -->
 - [Open work + session state](qigor-open-work.md) — 9 unpushed commits, 0.8.3 never built, and the five improvements frank has not decided on.
+- [Scheduler's one-minute floor](task-scheduler-minute-floor.md) — schtasks rejects PT5S/PT30S, which is why slideshow preview is a Tk timer.
 - [Startup cost is emoji](tk-startup-cost-emoji.md) — 716ms for the first emoji glyph in Tk; never query schtasks on the main thread.
 - [GUI overhaul verified](gui-overhaul-untested-handoff.md) — every tab driven button-by-button at 0.8.3; how to script a modal Tk GUI without deadlocking.
 - [Installer release state](installer-release-state.md) — v0.8.2 published; version.json must ship with every release or updates never fire.

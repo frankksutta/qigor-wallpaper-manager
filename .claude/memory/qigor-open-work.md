@@ -29,6 +29,27 @@ pane lists the saved files; both image tabs are now built from
 its own widgets and the shared picking behaviour), which is what let the Lock
 Screen tab stop borrowing the Wallpaper tab's selection.
 
+**2026-09-02, later session: playlists and slideshow preview were built**
+(uncommitted at the time of writing; frank has not been asked to commit).
+`app/playlists.py` is new — JSON storage at `~/.qigor-wallpaper/playlists.json`
+plus the `PlaylistPanel` tab. `slideshow.py` gained `resolve_pool()` and
+`advance()`, which the scheduled runner and the new in-app preview both call;
+state carries `source` ("folder"/"playlist") and `playlist`. The slideshow
+queue now holds absolute paths rather than bare filenames, so the first
+scheduled fire after this change reshuffles once — it did, live, at 11:49 on
+2026-09-02. Preview cannot use the scheduler: see
+[[task-scheduler-minute-floor]].
+
+Frank asked for two changes on top, both done: the preview re-reads shuffle,
+style and source at every rotation rather than snapshotting them at ▶ Preview,
+and **📋 Log prints into the app console instead of opening a window** — the
+last 40 lines, coloured by `_log_tag()`. That window carried the only Clear
+Log button, so `_trim_log()` now holds the file to its last 400 lines once it
+passes 1200, once per scheduled fire, and `_preview_log()` keeps only
+started/stopped/restored/error lines so a preview session cannot bury the
+rotation history in a 40-line tail. Frank was offered a Clear button back and
+has not asked for one.
+
 **Raised with frank, still undecided — do not just do these:**
 
 - **Emoji in the toolbar cost ~0.7s of startup.** Removing them is the only
