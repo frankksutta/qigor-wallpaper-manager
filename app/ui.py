@@ -8,6 +8,7 @@ from tkinter import ttk, scrolledtext
 
 from .constants import (APP_NAME, APP_VERSION, THEMES, BTN_COLORS,
                         CONSOLE_COLORS, WALLPAPER_STYLES, STORE_DIR)
+from . import scaling
 from .tooltip import Tooltip
 from . import dnd as dnd_mod
 
@@ -24,15 +25,21 @@ def build_ui(app):
     t = THEMES.get(app.theme_name, THEMES["dark"])
 
     # ── Menu bar ──────────────────────────────────────────────────────────────
-    menubar = tk.Menu(root)
+    # The font has to be set explicitly. On Windows a Menu resolves its default
+    # into a concrete spec when it is created — cget returns "{Segoe UI} 9",
+    # not the name "TkMenuFont" — so later changes to that named font never
+    # reach it, and the menu bar would be the one thing A+/A− left behind.
+    # 9 is what Windows uses, so 100% still looks native.
+    menu_font = scaling.font("Segoe UI", 9)
+    menubar = tk.Menu(root, font=menu_font)
     root.config(menu=menubar)
-    file_menu = tk.Menu(menubar, tearoff=0)
+    file_menu = tk.Menu(menubar, tearoff=0, font=menu_font)
     menubar.add_cascade(label="File", menu=file_menu)
     file_menu.add_command(label="Browse for Image…", command=app._browse_image)
     file_menu.add_command(label="Clear Log   Ctrl+L", command=app._clear_log)
     file_menu.add_separator()
     file_menu.add_command(label="Exit", command=app._on_close)
-    help_menu = tk.Menu(menubar, tearoff=0)
+    help_menu = tk.Menu(menubar, tearoff=0, font=menu_font)
     menubar.add_cascade(label="Help", menu=help_menu)
     help_menu.add_command(label="Check for Updates…", command=app._check_updates)
     # Only offered when running from a loose folder — an installed copy has
@@ -57,7 +64,7 @@ def build_ui(app):
              anchor=tk.W, padx=6).pack(side=tk.LEFT, fill=tk.X, expand=True)
     app.clock_var = tk.StringVar(value="")
     tk.Label(app._status_bar, textvariable=app.clock_var,
-             anchor=tk.E, font=("Consolas", 9),
+             anchor=tk.E, font=scaling.font("Consolas", 9),
              ).pack(side=tk.RIGHT, padx=(0, 20))
 
     # ── Progress bar ──────────────────────────────────────────────────────────
@@ -72,11 +79,25 @@ def build_ui(app):
     app.theme_btn.pack(side=tk.LEFT, padx=(0, 4))
     Tooltip(app.theme_btn, "Toggle dark / light theme.")
 
-    for text, delta in [("A+", +1), ("A-", -1)]:
-        btn = tk.Button(toolbar, text=text, width=3,
-                        command=lambda d=delta: app._change_font(d))
-        btn.pack(side=tk.LEFT, padx=2)
-        Tooltip(btn, f"{'Increase' if delta > 0 else 'Decrease'} console font size.")
+    # A− / reset / A+, in that order, matching qigor_wallpaper_sync. These zoom
+    # the whole window — every panel, label, button, entry, menu and dialog —
+    # not only the console.
+    zoom_btn = tk.Button(toolbar, text="A-", width=3,
+                         command=lambda: app._change_font(-1))
+    zoom_btn.pack(side=tk.LEFT, padx=(2, 2))
+    Tooltip(zoom_btn, "Make everything smaller.\n"
+                      "Scales the whole window, not just the console.")
+
+    reset_btn = tk.Button(toolbar, text="⟲", width=3, command=app._reset_font)
+    reset_btn.pack(side=tk.LEFT, padx=2)
+    Tooltip(reset_btn, f"Reset zoom to 100% ({scaling.BASE_SIZE} pt) — the size "
+                       "every panel was designed at.")
+
+    zoom_in_btn = tk.Button(toolbar, text="A+", width=3,
+                            command=lambda: app._change_font(+1))
+    zoom_in_btn.pack(side=tk.LEFT, padx=2)
+    Tooltip(zoom_in_btn, "Make everything bigger.\n"
+                         "Scales the whole window, not just the console.")
 
     c = BTN_COLORS["primary"]
     open_store_btn = tk.Button(toolbar, text="📁 Open Store Folder",
@@ -156,7 +177,7 @@ def build_ui(app):
              "or drag an image from a browser\n"
              "or paste a URL / image address below",
         height=6, relief=tk.RIDGE, cursor="hand2",
-        font=("Segoe UI", 10))
+        font=scaling.font("Segoe UI", 10))
     app._drop_label.pack(fill=tk.X, padx=6, pady=(6, 4))
     app._drop_label.bind("<Button-1>", lambda _: app._browse_image())
     Tooltip(app._drop_label,
@@ -194,10 +215,10 @@ def build_ui(app):
 
     url_row = tk.Frame(drop_frame)
     url_row.pack(fill=tk.X, padx=6, pady=(0, 6))
-    tk.Label(url_row, text="URL / Path:", font=("Segoe UI", 9)
+    tk.Label(url_row, text="URL / Path:", font=scaling.font("Segoe UI", 9)
              ).pack(side=tk.LEFT, padx=(0, 4))
     app._url_entry = tk.Entry(url_row, textvariable=app._pending_path,
-                               font=("Consolas", app.font_size))
+                               font=scaling.font("Consolas", 10))
     app._url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
     Tooltip(app._url_entry,
             "Paste a web URL, image address (right-click → Copy image address),\n"
@@ -206,7 +227,7 @@ def build_ui(app):
     app._url_entry.bind("<Return>", lambda _: app._start_task())
 
     c = BTN_COLORS["primary"]
-    browse_btn = tk.Button(url_row, text="Browse…", font=("Segoe UI", 9),
+    browse_btn = tk.Button(url_row, text="Browse…", font=scaling.font("Segoe UI", 9),
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
               command=app._browse_image)
     browse_btn.pack(side=tk.LEFT, padx=(0, 2))
@@ -228,7 +249,7 @@ def build_ui(app):
     }
     for s in WALLPAPER_STYLES:
         rb = tk.Radiobutton(style_row, text=s, variable=app._style_var, value=s,
-                            font=("Segoe UI", 9),
+                            font=scaling.font("Segoe UI", 9),
                             command=lambda: (
                                 app.cfg.set("wallpaper_style", app._style_var.get()),
                                 app._reflow_preview()
@@ -241,7 +262,7 @@ def build_ui(app):
     cb = tk.Checkbutton(copy_row,
         text="Copy image to local store (prevents broken wallpaper if original moves)",
         variable=app._copy_var,
-        font=("Segoe UI", 9),
+        font=scaling.font("Segoe UI", 9),
         command=lambda: app.cfg.set("copy_to_store", app._copy_var.get()))
     cb.pack(side=tk.LEFT)
     Tooltip(cb,
@@ -325,7 +346,7 @@ def build_ui(app):
     # ── Last changed banner ───────────────────────────────────────────────────
     app._last_changed_var = tk.StringVar(value="")
     lc_lbl = tk.Label(left, textvariable=app._last_changed_var,
-                      font=("Segoe UI", 9, "italic"), anchor=tk.W)
+                      font=scaling.font("Segoe UI", 9, slant="italic"), anchor=tk.W)
     lc_lbl.pack(fill=tk.X, padx=2, pady=(0, 4))
 
     # ── History list ──────────────────────────────────────────────────────────
@@ -335,9 +356,9 @@ def build_ui(app):
     hist_hdr = tk.Frame(hist_frame)
     hist_hdr.pack(fill=tk.X, padx=4, pady=(4, 0))
     tk.Label(hist_hdr, text="Recent wallpapers (click to re-apply):",
-             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+             font=scaling.font("Segoe UI", 9)).pack(side=tk.LEFT)
     c = BTN_COLORS["danger"]
-    clrhist_btn = tk.Button(hist_hdr, text="Clear History", font=("Segoe UI", 8),
+    clrhist_btn = tk.Button(hist_hdr, text="Clear History", font=scaling.font("Segoe UI", 8),
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
               command=app._clear_history)
     clrhist_btn.pack(side=tk.RIGHT, padx=4)
@@ -348,7 +369,7 @@ def build_ui(app):
     scrollbar = tk.Scrollbar(hist_list_frame)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     app._hist_listbox = tk.Listbox(hist_list_frame,
-                                    font=("Consolas", app.font_size - 1),
+                                    font=scaling.font("Consolas", 9),
                                     yscrollcommand=scrollbar.set,
                                     selectmode=tk.SINGLE)
     app._hist_listbox.pack(fill=tk.BOTH, expand=True)
@@ -369,13 +390,13 @@ def build_ui(app):
 
     app._preview_label = tk.Label(prev_frame,
         text="(no image selected)\n\nDrop or paste an image to preview",
-        font=("Segoe UI", 9), relief=tk.SUNKEN)
+        font=scaling.font("Segoe UI", 9), relief=tk.SUNKEN)
     app._preview_label.pack(fill=tk.BOTH, expand=True, padx=6, pady=(6, 2))
     app._preview_label.bind("<Configure>", app._on_preview_resize)
 
     app._preview_info_var = tk.StringVar(value="")
     tk.Label(prev_frame, textvariable=app._preview_info_var,
-             font=("Segoe UI", 8), anchor=tk.CENTER,
+             font=scaling.font("Segoe UI", 8), anchor=tk.CENTER,
              ).pack(fill=tk.X, padx=6, pady=(0, 2))
 
     btn_row_prev = tk.Frame(prev_frame)
@@ -384,7 +405,7 @@ def build_ui(app):
     c = BTN_COLORS["primary"]
     prev_btn = tk.Button(btn_row_prev, text="🔍  Preview Selected",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=("Segoe UI", 9), command=app._load_preview)
+              font=scaling.font("Segoe UI", 9), command=app._load_preview)
     prev_btn.pack(side=tk.LEFT, padx=(0, 4))
     Tooltip(prev_btn,
             "Load and display a preview of the current URL / file.\n"
@@ -394,7 +415,7 @@ def build_ui(app):
     c = BTN_COLORS["warning"]
     cur_wp_btn = tk.Button(btn_row_prev, text="🖥  Current Wallpaper",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=("Segoe UI", 9), command=app._show_current_wallpaper)
+              font=scaling.font("Segoe UI", 9), command=app._show_current_wallpaper)
     cur_wp_btn.pack(side=tk.LEFT, padx=(0, 4))
     Tooltip(cur_wp_btn,
             "Preview the wallpaper currently set on your desktop.\n"
@@ -402,7 +423,7 @@ def build_ui(app):
 
     cur_ls_prev_btn = tk.Button(btn_row_prev, text="🖥  Current Lock Screen",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=("Segoe UI", 9), command=app._show_current_lock_screen)
+              font=scaling.font("Segoe UI", 9), command=app._show_current_lock_screen)
     cur_ls_prev_btn.pack(side=tk.LEFT)
     Tooltip(cur_ls_prev_btn, "Preview the image currently set as your lock screen.")
 
@@ -415,7 +436,7 @@ def build_ui(app):
     fav_hdr = tk.Frame(fav_frame)
     fav_hdr.pack(fill=tk.X, padx=4, pady=(4, 0))
     tk.Label(fav_hdr, text="Quick-jump folders & gallery URLs:",
-             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+             font=scaling.font("Segoe UI", 9)).pack(side=tk.LEFT)
 
     fav_btn_row = tk.Frame(fav_frame)
     fav_btn_row.pack(fill=tk.X, padx=4, pady=2)
@@ -423,7 +444,7 @@ def build_ui(app):
     c = BTN_COLORS["primary"]
     add_fol_btn = tk.Button(fav_btn_row, text="+ Add Folder",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=("Segoe UI", 8), command=app._add_favorite_folder)
+              font=scaling.font("Segoe UI", 8), command=app._add_favorite_folder)
     add_fol_btn.pack(side=tk.LEFT, padx=(0, 4))
     Tooltip(add_fol_btn,
             "Add a folder to favorites.\n"
@@ -435,7 +456,7 @@ def build_ui(app):
     c = BTN_COLORS["warning"]
     add_url_btn = tk.Button(fav_btn_row, text="+ Add URL",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=("Segoe UI", 8), command=app._add_favorite_url)
+              font=scaling.font("Segoe UI", 8), command=app._add_favorite_url)
     add_url_btn.pack(side=tk.LEFT, padx=(0, 4))
     Tooltip(add_url_btn,
             "Add a website URL to favorites.\n"
@@ -446,14 +467,14 @@ def build_ui(app):
     c = BTN_COLORS["danger"]
     rem_btn = tk.Button(fav_btn_row, text="Remove",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=("Segoe UI", 8), command=app._remove_favorite)
+              font=scaling.font("Segoe UI", 8), command=app._remove_favorite)
     rem_btn.pack(side=tk.LEFT, padx=(0, 4))
     Tooltip(rem_btn, "Remove the selected favorite.\nOr right-click any item in the list.")
 
     c = BTN_COLORS["primary"]
     restore_btn = tk.Button(fav_btn_row, text="↺ Restore Defaults",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=("Segoe UI", 8), command=app._restore_default_favorites)
+              font=scaling.font("Segoe UI", 8), command=app._restore_default_favorites)
     restore_btn.pack(side=tk.LEFT)
     Tooltip(restore_btn,
             "Re-adds the default lucid24 gallery URLs that may have been deleted.\n"
@@ -464,7 +485,7 @@ def build_ui(app):
     fav_scroll = tk.Scrollbar(fav_list_frame)
     fav_scroll.pack(side=tk.RIGHT, fill=tk.Y)
     app._fav_listbox = tk.Listbox(fav_list_frame,
-                                   font=("Consolas", app.font_size - 1),
+                                   font=scaling.font("Consolas", 9),
                                    yscrollcommand=fav_scroll.set,
                                    selectmode=tk.SINGLE)
     app._fav_listbox.pack(fill=tk.BOTH, expand=True)
@@ -484,7 +505,7 @@ def build_ui(app):
     console_hdr = tk.Frame(console_outer)
     console_hdr.pack(fill=tk.X)
     tk.Label(console_hdr, text="Log",
-             font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
+             font=scaling.font("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
     app._autoscroll_var = tk.BooleanVar(value=app.cfg.get("autoscroll"))
     tk.Checkbutton(console_hdr, text="Auto-scroll",
                    variable=app._autoscroll_var,
@@ -493,18 +514,20 @@ def build_ui(app):
 
     console_frame = tk.LabelFrame(console_outer, text="")
     console_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
+    # Held on the app: the theme code and A+/A- both need these same objects,
+    # and a tag given a font *tuple* would never follow a zoom.
+    app._font_console      = scaling.font("Consolas", scaling.BASE_SIZE)
+    app._font_console_bold = scaling.font("Consolas", scaling.BASE_SIZE, "bold")
     app.console = scrolledtext.ScrolledText(
-        console_frame, font=("Consolas", app.font_size), wrap=tk.WORD, height=6)
+        console_frame, font=app._font_console, wrap=tk.WORD, height=6)
     app.console.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
     for tag, color in CONSOLE_COLORS["dark"].items():
-        weight = "bold" if tag == "bold" else "normal"
         app.console.tag_configure(
             tag, foreground=color,
-            font=("Consolas", app.font_size, weight))
+            font=app._font_console_bold if tag == "bold" else app._font_console)
     app.console.tag_configure(
-        "default", foreground="#d4d4d4",
-        font=("Consolas", app.font_size))
+        "default", foreground="#d4d4d4", font=app._font_console)
 
     app._log("─" * 52, "dim")
     app._log(f"  {APP_NAME}  v{APP_VERSION}", "bold")

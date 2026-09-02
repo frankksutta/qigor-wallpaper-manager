@@ -4,6 +4,8 @@ tooltip.py  —  QiGor Wallpaper Manager
 """
 import tkinter as tk
 
+from . import scaling
+
 
 class Tooltip:
     """600 ms hover tooltip. Usage: Tooltip(widget, 'explanation text')"""
@@ -34,4 +36,5 @@ class Tooltip:
         tk.Label(tw, text=self.text, justify=tk.LEFT,
                  background="#ffffe0", foreground="#000000",
                  relief=tk.SOLID, borderwidth=1,
-                 font=("Segoe UI", 9), wraplength=360, padx=6, pady=4).pack()
+                 font=scaling.font("Segoe UI", 9),
+                 wraplength=scaling.scaled(360), padx=6, pady=4).pack()

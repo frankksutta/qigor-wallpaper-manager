@@ -33,6 +33,7 @@ from pathlib import Path
 
 import tkinter as tk
 from tkinter import ttk
+from . import scaling
 
 from .constants import (APP_NAME, APP_BUILD, RELEASE_BASE, RELEASE_PAGE,
                         SETUP_ASSET, MANIFEST_ASSET, UPDATE_INTERVAL_HOURS,
@@ -291,7 +292,6 @@ class UpdateDialog(tk.Toplevel):
 
         t = THEMES.get(app.theme_name, THEMES["dark"])
         dim = CONSOLE_COLORS[app.theme_name]["dim"]
-        fs  = app.font_size
         self.t, self.dim = t, dim
 
         self.title("Updates — {}".format(APP_NAME))
@@ -303,31 +303,31 @@ class UpdateDialog(tk.Toplevel):
 
         pad = dict(padx=20)
         self._head = tk.Label(self, text="Checking for updates…", bg=t["bg"],
-                              fg=t["fg"], font=("Segoe UI", 14, "bold"),
+                              fg=t["fg"], font=scaling.font("Segoe UI", 14, "bold"),
                               anchor="w")
         self._head.pack(fill="x", pady=(18, 4), **pad)
 
         self._sub = tk.Label(self, text="Installed build {}".format(APP_BUILD),
-                             bg=t["bg"], fg=dim, font=("Segoe UI", fs - 1),
+                             bg=t["bg"], fg=dim, font=scaling.font("Segoe UI", 9),
                              anchor="w")
         self._sub.pack(fill="x", **pad)
 
         self._notes = tk.Text(self, bg=t["console_bg"], fg=t["console_fg"],
-                              font=("Segoe UI", fs), relief="flat", wrap="word",
+                              font=scaling.font("Segoe UI", 10), relief="flat", wrap="word",
                               height=8, padx=10, pady=8)
         self._notes.pack(fill="both", expand=True, pady=(14, 8), **pad)
         self._notes.configure(state="disabled")
 
         self._bar = ttk.Progressbar(self, mode="determinate", maximum=1000)
         self._pct = tk.Label(self, text="", bg=t["bg"], fg=dim,
-                             font=("Segoe UI", fs - 1), anchor="w")
+                             font=scaling.font("Segoe UI", 9), anchor="w")
 
         self._auto = tk.BooleanVar(value=bool(app.cfg.get("update_check_enabled")))
         tk.Checkbutton(self, text="Check for updates automatically",
                        variable=self._auto, command=self._toggle_auto,
                        bg=t["bg"], fg=t["fg"], selectcolor=t["console_bg"],
                        activebackground=t["bg"], activeforeground=t["fg"],
-                       highlightthickness=0, font=("Segoe UI", fs - 1)
+                       highlightthickness=0, font=scaling.font("Segoe UI", 9)
                        ).pack(anchor="w", pady=(0, 6), **pad)
 
         bar = tk.Frame(self, bg=t["bg"])
@@ -335,11 +335,11 @@ class UpdateDialog(tk.Toplevel):
         c = BTN_COLORS["primary"]
         self._ok = tk.Button(bar, text="Close", bg=c["bg"], fg=c["fg"],
                              activebackground=c["active"], relief="flat",
-                             font=("Segoe UI", fs, "bold"), width=18,
+                             font=scaling.font("Segoe UI", 10, "bold"), width=18,
                              cursor="hand2", command=self._primary)
         self._ok.pack(side="right")
         self._alt = tk.Button(bar, text="Not now", bg=t["btn_bg"], fg=t["btn_fg"],
-                              relief="flat", font=("Segoe UI", fs), width=12,
+                              relief="flat", font=scaling.font("Segoe UI", 10), width=12,
                               command=self.destroy)
         self._alt.pack(side="right", padx=(0, 8))
         self._alt.pack_forget()

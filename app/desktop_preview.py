@@ -14,6 +14,7 @@ import ctypes
 import ctypes.wintypes
 import tkinter as tk
 from tkinter import ttk
+from . import scaling
 
 # ── Win32 constants ───────────────────────────────────────────────────────────
 SW_HIDE             = 0
@@ -157,7 +158,7 @@ class DesktopPreviewOverlay:
 
         # Title
         tk.Label(pad, text="🖼  QiGor  —  Desktop Preview",
-                 font=("Segoe UI", 10, "bold"),
+                 font=scaling.font("Segoe UI", 10, "bold"),
                  bg="#1a1a2e", fg="#d4d4d4").pack(anchor=tk.W)
 
         # Progress bar
@@ -171,7 +172,7 @@ class DesktopPreviewOverlay:
         self._label_var = tk.StringVar()
         self._update_label()
         tk.Label(pad, textvariable=self._label_var,
-                 font=("Segoe UI", 9), bg="#1a1a2e",
+                 font=scaling.font("Segoe UI", 9), bg="#1a1a2e",
                  fg="#888888").pack(anchor=tk.CENTER)
 
         # Buttons
@@ -180,7 +181,7 @@ class DesktopPreviewOverlay:
 
         self._restore_btn = tk.Button(
             btn_row, text="▶  Restore Now",
-            font=("Segoe UI", 10, "bold"),
+            font=scaling.font("Segoe UI", 10, "bold"),
             bg="#1a6b2e", fg="#ffffff",
             activebackground="#1e8038",
             relief=tk.FLAT, padx=12, pady=4,
@@ -190,7 +191,7 @@ class DesktopPreviewOverlay:
 
         tk.Button(
             btn_row, text="+{}s".format(EXTEND_SECONDS),
-            font=("Segoe UI", 10),
+            font=scaling.font("Segoe UI", 10),
             bg="#0e639c", fg="#ffffff",
             activebackground="#1177bb",
             relief=tk.FLAT, padx=8, pady=4,

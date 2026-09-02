@@ -17,6 +17,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 
 from .constants import (APP_NAME, APP_VERSION, APP_BUILD, STORE_DIR, HELPERS_DIR,
                         THEMES, BTN_COLORS, CONSOLE_COLORS, WIN_IMAGE_SOURCES)
+from . import scaling
 from .config import Config
 from .tooltip import Tooltip
 from .dialogs import AboutDialog, _InputDialog, _RenameDialog
@@ -58,7 +59,12 @@ class App:
         self.root.minsize(800, 600)
 
         self.theme_name    = self.cfg.get("theme")
-        self.font_size     = self.cfg.get("font_size")
+        # Two-phase font sizing. Tk's named fonts are pinned to the 100%
+        # baseline first, so every widget is built at a known size and 100%
+        # always means "everything matches"; the size the user actually saved
+        # is applied once, after build_ui, when every font exists to rescale.
+        scaling.adopt_named_fonts()
+        self.font_size     = scaling.BASE_SIZE
         self.is_running    = False
         self._cancel_event = threading.Event()
         self._valid: dict  = {}
@@ -78,6 +84,7 @@ class App:
         HELPERS_DIR.mkdir(parents=True, exist_ok=True)
 
         self._build_ui()
+        self.font_size = scaling.apply(self.cfg.get("font_size"))
         self._apply_theme()
         self._bind_shortcuts()
         self._start_clock()
@@ -412,7 +419,7 @@ class App:
             label = resolved.split("/")[2] if "/" in resolved else resolved[:40]
             dialog = _InputDialog(self.root, "Add URL Favorite",
                                   f"Confirm label for:\n{resolved[:80]}",
-                                  self.theme_name, self.font_size,
+                                  self.theme_name,
                                   prefill_label=label, prefill_url=resolved)
             self.root.wait_window(dialog)
             if dialog.result:
@@ -591,7 +598,7 @@ class App:
     def _add_favorite_url(self):
         dialog = _InputDialog(self.root, "Add Gallery URL",
                               "Enter a label and URL for a gallery or image page:",
-                              self.theme_name, self.font_size)
+                              self.theme_name)
         self.root.wait_window(dialog)
         if dialog.result:
             label, url = dialog.result
@@ -645,7 +652,8 @@ class App:
         if idx >= len(favs):
             return
         t = THEMES.get(self.theme_name, THEMES["dark"])
-        menu = tk.Menu(self.root, tearoff=0)
+        menu = tk.Menu(self.root, tearoff=0,
+                       font=scaling.font("Segoe UI", 9))
         menu.configure(bg=t["btn_bg"], fg=t["fg"],
                        activebackground=BTN_COLORS["primary"]["bg"],
                        activeforeground="#ffffff")
@@ -670,7 +678,7 @@ class App:
             return
         fav = favs[idx]
         dialog = _RenameDialog(self.root, fav["label"], fav["location"],
-                               self.theme_name, self.font_size)
+                               self.theme_name)
         self.root.wait_window(dialog)
         if dialog.result:
             new_label, new_loc = dialog.result
@@ -911,7 +919,8 @@ class App:
     # ── Windows Sources menu ──────────────────────────────────────────────────
 
     def _show_win_sources_menu(self):
-        menu = tk.Menu(self.root, tearoff=0)
+        menu = tk.Menu(self.root, tearoff=0,
+                       font=scaling.font("Segoe UI", 9))
         t = THEMES.get(self.theme_name, THEMES["dark"])
         menu.configure(bg=t["btn_bg"], fg=t["fg"],
                        activebackground=BTN_COLORS["primary"]["bg"],
@@ -977,8 +986,7 @@ class App:
                 "  Open Slideshow → 📋 Log for details.".format(detail), "yellow")
 
     def _show_slideshow_dialog(self):
-        dialog = SlideshowDialog(self.root, self.cfg, self.theme_name, self.font_size,
-                                 )
+        dialog = SlideshowDialog(self.root, self.cfg, self.theme_name)
         self.root.wait_window(dialog)
         if dialog.result == "started":
             self._slideshow_btn.config(text="🖼 Slideshow ✔")
@@ -997,8 +1005,7 @@ class App:
             self.root.after(500, self._show_current_wallpaper)
 
     def _show_reminder_dialog(self):
-        dialog = _ReminderDialog(self.root, self.cfg, self.theme_name, self.font_size,
-                                 )
+        dialog = _ReminderDialog(self.root, self.cfg, self.theme_name)
         self.root.wait_window(dialog)
         if dialog.result == "set":
             self.cfg.set("reminder_set", True)
@@ -1034,7 +1041,7 @@ class App:
     # ── About ─────────────────────────────────────────────────────────────────
 
     def _show_about(self):
-        AboutDialog(self.root, self.theme_name, self.font_size)
+        AboutDialog(self.root, self.theme_name)
 
     # ── Updates and installation ──────────────────────────────────────────────
 
@@ -1127,13 +1134,13 @@ class App:
             try: child.configure(bg=t["status_bg"], fg=t["status_fg"])
             except tk.TclError: pass
         self.theme_btn.config(text="☀" if self.theme_name == "dark" else "🌙")
+        # Colours only. The tags' fonts are the registered Font objects set up
+        # in build_ui, and re-stating them here as tuples would freeze the
+        # console at whatever size it was when the theme last changed.
         palette = CONSOLE_COLORS[self.theme_name]
         for tag, color in palette.items():
-            weight = "bold" if tag == "bold" else "normal"
-            self.console.tag_configure(tag, foreground=color,
-                font=("Consolas", self.font_size, weight))
-        self.console.tag_configure("default", foreground=t["console_fg"],
-            font=("Consolas", self.font_size))
+            self.console.tag_configure(tag, foreground=color)
+        self.console.tag_configure("default", foreground=t["console_fg"])
         self._apply_theme_recursive(self.root, t)
 
     def _apply_theme_recursive(self, widget, t):
@@ -1171,14 +1178,22 @@ class App:
         self._apply_theme()
 
     def _change_font(self, delta):
-        self.font_size = max(7, min(20, self.font_size + delta))
-        self.console.config(font=("Consolas", self.font_size))
+        """
+        Zoom the whole window, not just the console.
+
+        Nothing is reconfigured here beyond the one number: every font in the
+        UI is a registered named font, so Tk re-renders each widget itself the
+        moment scaling.apply rewrites the sizes.
+        """
+        self.font_size = scaling.apply(self.font_size + delta)
         self.cfg.set("font_size", self.font_size)
-        palette = CONSOLE_COLORS[self.theme_name]
-        for tag in list(palette.keys()) + ["default"]:
-            weight = "bold" if tag == "bold" else "normal"
-            self.console.tag_configure(
-                tag, font=("Consolas", self.font_size, weight))
+        self._place_sizegrip()
+
+    def _reset_font(self):
+        """Back to 100%, where every font matches its designed size."""
+        self.font_size = scaling.apply(scaling.BASE_SIZE)
+        self.cfg.set("font_size", self.font_size)
+        self._place_sizegrip()
 
     # ── Close ─────────────────────────────────────────────────────────────────
 

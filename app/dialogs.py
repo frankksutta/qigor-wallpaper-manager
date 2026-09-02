@@ -7,12 +7,13 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext
 
 from .constants import APP_NAME, APP_VERSION, THEMES, BTN_COLORS, CONSOLE_COLORS
+from . import scaling
 
 
 class AboutDialog(tk.Toplevel):
     """About dialog with banner image and app description."""
 
-    def __init__(self, parent, theme_name, font_size):
+    def __init__(self, parent, theme_name):
         super().__init__(parent)
         self.title(f"About {APP_NAME}")
         t = THEMES.get(theme_name, THEMES["dark"])
@@ -21,9 +22,9 @@ class AboutDialog(tk.Toplevel):
         self.minsize(480, 360)
         self.geometry("580x600")
         self.grab_set()
-        fn  = ("Segoe UI", font_size)
-        fnb = ("Segoe UI", font_size + 2, "bold")
-        fns = ("Segoe UI", font_size - 1)
+        fn  = scaling.font("Segoe UI", 10)
+        fnb = scaling.font("Segoe UI", 12, "bold")
+        fns = scaling.font("Segoe UI", 9)
 
         ttk.Sizegrip(self).place(relx=1.0, rely=1.0, anchor="se")
 
@@ -146,7 +147,7 @@ class AboutDialog(tk.Toplevel):
 class _InputDialog(tk.Toplevel):
     """Two-field dialog: label and URL/path. result = (label, url) or None."""
 
-    def __init__(self, parent, title, prompt, theme_name="dark", font_size=10,
+    def __init__(self, parent, title, prompt, theme_name="dark",
                  prefill_label="", prefill_url=""):
         super().__init__(parent)
         self.title(title)
@@ -156,8 +157,8 @@ class _InputDialog(tk.Toplevel):
         self.resizable(True, False)
         self.minsize(440, 0)
         self.grab_set()
-        fn  = ("Segoe UI", font_size)
-        fnb = ("Segoe UI", font_size, "bold")
+        fn  = scaling.font("Segoe UI", 10)
+        fnb = scaling.font("Segoe UI", 10, "bold")
 
         ttk.Sizegrip(self).place(relx=1.0, rely=1.0, anchor="se")
 
@@ -178,13 +179,13 @@ class _InputDialog(tk.Toplevel):
 
         tk.Label(body, text="Label:", font=fnb, bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
         self._lbl_var = tk.StringVar(value=prefill_label)
-        tk.Entry(body, textvariable=self._lbl_var, font=("Consolas", font_size),
+        tk.Entry(body, textvariable=self._lbl_var, font=scaling.font("Consolas", 10),
                  bg=t["entry_bg"], fg=t["entry_fg"], width=50).pack(fill=tk.X, pady=(2, 8))
 
         tk.Label(body, text="URL or folder path:", font=fnb,
                  bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
         self._url_var = tk.StringVar(value=prefill_url)
-        tk.Entry(body, textvariable=self._url_var, font=("Consolas", font_size),
+        tk.Entry(body, textvariable=self._url_var, font=scaling.font("Consolas", 10),
                  bg=t["entry_bg"], fg=t["entry_fg"], width=50).pack(fill=tk.X, pady=(2, 0))
 
         self.bind("<Return>", lambda _: self._ok())
@@ -202,7 +203,7 @@ class _RenameDialog(tk.Toplevel):
     """Edit label and URL/path for a favorite. result = (label, location) or None."""
 
     def __init__(self, parent, current_label, current_location,
-                 theme_name="dark", font_size=10):
+                 theme_name="dark"):
         super().__init__(parent)
         self.title("Edit Favorite")
         self.result = None
@@ -211,8 +212,8 @@ class _RenameDialog(tk.Toplevel):
         self.resizable(True, False)
         self.minsize(480, 0)
         self.grab_set()
-        fn  = ("Segoe UI", font_size)
-        fnb = ("Segoe UI", font_size, "bold")
+        fn  = scaling.font("Segoe UI", 10)
+        fnb = scaling.font("Segoe UI", 10, "bold")
 
         ttk.Sizegrip(self).place(relx=1.0, rely=1.0, anchor="se")
 
@@ -234,7 +235,7 @@ class _RenameDialog(tk.Toplevel):
                  bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
         self._lbl_var = tk.StringVar(value=current_label)
         lbl_entry = tk.Entry(body, textvariable=self._lbl_var,
-                             font=("Consolas", font_size),
+                             font=scaling.font("Consolas", 10),
                              bg=t["entry_bg"], fg=t["entry_fg"], width=54)
         lbl_entry.pack(fill=tk.X, pady=(4, 12))
         lbl_entry.select_range(0, tk.END)
@@ -244,7 +245,7 @@ class _RenameDialog(tk.Toplevel):
                  bg=t["bg"], fg=t["fg"]).pack(anchor=tk.W)
         self._loc_var = tk.StringVar(value=current_location)
         tk.Entry(body, textvariable=self._loc_var,
-                 font=("Consolas", font_size),
+                 font=scaling.font("Consolas", 10),
                  bg=t["entry_bg"], fg=t["entry_fg"], width=54).pack(
                      fill=tk.X, pady=(4, 0))
 

@@ -12,6 +12,7 @@ from tkinter import ttk, scrolledtext, messagebox
 from pathlib import Path
 
 from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, HELPERS_DIR
+from . import scaling
 
 
 
@@ -25,7 +26,7 @@ class _ReminderDialog(tk.Toplevel):
     """
     TASK_NAME = "QiGorWallpaperReminder"
 
-    def __init__(self, parent, cfg, theme_name, font_size):
+    def __init__(self, parent, cfg, theme_name):
         super().__init__(parent)
         self.title("Wallpaper Change Reminder")
         self.result = None
@@ -45,9 +46,9 @@ class _ReminderDialog(tk.Toplevel):
         self.resizable(True, False)
         self.minsize(480, 0)
         self.grab_set()
-        fn  = ("Segoe UI", font_size)
-        fnb = ("Segoe UI", font_size, "bold")
-        fns = ("Segoe UI", font_size - 1)
+        fn  = scaling.font("Segoe UI", 10)
+        fnb = scaling.font("Segoe UI", 10, "bold")
+        fns = scaling.font("Segoe UI", 9)
         dim = CONSOLE_COLORS[theme_name]["dim"]
 
         saved_freq  = cfg.get("reminder_freq")  or "weekly"
@@ -336,7 +337,7 @@ class _ReminderDialog(tk.Toplevel):
         dlg.geometry("700x400")
         dlg.grab_set()
         dlg.configure(bg=t["bg"])
-        txt = scrolledtext.ScrolledText(dlg, font=("Consolas", 9), wrap=tk.WORD,
+        txt = scrolledtext.ScrolledText(dlg, font=scaling.font("Consolas", 9), wrap=tk.WORD,
                                         bg=t["entry_bg"], fg=t["fg"])
         txt.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         txt.insert(tk.END, content)

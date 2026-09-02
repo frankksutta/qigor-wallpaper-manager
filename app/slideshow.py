@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .constants import THEMES, BTN_COLORS, CONSOLE_COLORS, STORE_DIR, WALLPAPER_STYLES, HELPERS_DIR, APP_BUILD
 from .wallpaper import find_python_exe
+from . import scaling
 from .tooltip import Tooltip
 
 TASK_NAME  = "QiGorWallpaperSlideshow"
@@ -484,7 +485,7 @@ class SlideshowDialog(tk.Toplevel):
     result: "started" | "stopped" | "next" | None
     """
 
-    def __init__(self, parent, cfg, theme_name, font_size):
+    def __init__(self, parent, cfg, theme_name):
         super().__init__(parent)
         self.title("Wallpaper Slideshow")
         self.result   = None
@@ -495,9 +496,9 @@ class SlideshowDialog(tk.Toplevel):
         self.resizable(True, False)
         self.minsize(500, 0)
         self.grab_set()
-        fn  = ("Segoe UI", font_size)
-        fnb = ("Segoe UI", font_size, "bold")
-        fns = ("Segoe UI", font_size - 1)
+        fn  = scaling.font("Segoe UI", 10)
+        fnb = scaling.font("Segoe UI", 10, "bold")
+        fns = scaling.font("Segoe UI", 9)
         dim = CONSOLE_COLORS[theme_name]["dim"]
 
         state          = load_state()
@@ -605,7 +606,7 @@ class SlideshowDialog(tk.Toplevel):
                  width=12, anchor=tk.W).pack(side=tk.LEFT)
         self._folder_var = tk.StringVar(value=saved_folder)
         tk.Entry(fr, textvariable=self._folder_var,
-                 font=("Consolas", font_size - 1),
+                 font=scaling.font("Consolas", 9),
                  bg=t["entry_bg"], fg=t["entry_fg"]).pack(
                      side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4))
         c = BTN_COLORS["primary"]
@@ -756,7 +757,7 @@ class SlideshowDialog(tk.Toplevel):
         rw.geometry("660x220")
         # No grab_set — don't block the main app
         rw.configure(bg=t["bg"])
-        txt = scrolledtext.ScrolledText(rw, font=("Consolas", 9),
+        txt = scrolledtext.ScrolledText(rw, font=scaling.font("Consolas", 9),
                                         wrap=tk.WORD, bg=t["entry_bg"], fg=t["fg"])
         txt.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         txt.insert(tk.END, "ok={}\n\n{}\n\n{}\n\nquery: {}".format(
@@ -880,7 +881,7 @@ class SlideshowDialog(tk.Toplevel):
         dlg.geometry("700x400")
         dlg.grab_set()
         dlg.configure(bg=t["bg"])
-        txt = scrolledtext.ScrolledText(dlg, font=("Consolas", 9),
+        txt = scrolledtext.ScrolledText(dlg, font=scaling.font("Consolas", 9),
                                         wrap=tk.WORD, bg=t["entry_bg"], fg=t["fg"])
         txt.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         txt.insert(tk.END, content)
