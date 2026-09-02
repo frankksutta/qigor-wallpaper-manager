@@ -21,31 +21,10 @@ from .constants import (APP_NAME, APP_VERSION, APP_BUILD, STORE_DIR, HELPERS_DIR
 from . import scaling
 from .config import Config
 from .tooltip import Tooltip
-from .dialogs import AboutDialog, _InputDialog, _RenameDialog
+from .dialogs import AboutDialog, NameDialog, _InputDialog, _RenameDialog
 from .slideshow import (slideshow_runner_is_stale,
                         slideshow_last_run_failed)
 from .desktop_preview import start_preview
-
-
-def _url_label(url: str) -> str:
-    """
-    A first guess at what to call a gallery URL.
-
-    The host alone made every archive.org gallery read "archive.org"; the last
-    part of the path is what actually names one. The user edits it anyway —
-    this is only what the box starts out holding.
-    """
-    from urllib.parse import urlparse, unquote
-    parts = urlparse(url)
-    tail = [p for p in parts.path.split("/") if p]
-    if tail:
-        name = unquote(tail[-1])
-        # index.html names nothing; the folder above it does.
-        if name.lower().startswith("index.") and len(tail) > 1:
-            name = unquote(tail[-2])
-        if name:
-            return name[:60]
-    return parts.netloc or url[:40]
 
 
 def _get_exe_dir() -> Path:
@@ -61,6 +40,7 @@ def _get_exe_dir() -> Path:
 from . import wallpaper as wp
 from . import preview as pv
 from . import dnd as dnd_mod
+from . import gallery
 
 try:
     from PIL import Image, ImageTk
@@ -430,7 +410,7 @@ class App:
             self._save_favorite(Path(resolved).name, resolved)
             self._log(f"Favorite folder added: {resolved}", "green")
         elif is_url:
-            label = _url_label(resolved)
+            label = gallery.url_label(resolved)
             dialog = _InputDialog(self.root, "Add URL Favorite",
                                   f"Confirm label for:\n{resolved[:80]}",
                                   self.theme_name,
@@ -728,6 +708,131 @@ class App:
         self.cfg.set("favorites", favs)
         self._refresh_favorites_list()
         self._log(f"Removed favorite: {removed['label']}", "yellow")
+
+    # ── Import a gallery ──────────────────────────────────────────────────────
+
+    def _import_gallery(self):
+        """
+        Download every image on the selected gallery page into the store.
+
+        Three steps, because the first two need the network and the one in the
+        middle needs an answer: find what is there, ask where to put it, fetch
+        it. Only the asking happens on the main thread.
+        """
+        if self.is_running:
+            self._log("Something is already running — wait for it to finish.",
+                      "yellow")
+            return
+        sel = self._fav_listbox.curselection()
+        favs = self.cfg.get("favorites") or []
+        if not sel or sel[0] >= len(favs):
+            messagebox.showinfo(
+                "Nothing selected",
+                "Pick a gallery URL from the list first.", parent=self.root)
+            return
+        fav = favs[sel[0]]
+        loc = fav.get("location", "")
+        if not loc.lower().startswith(("http://", "https://")):
+            messagebox.showinfo(
+                "Not a gallery page",
+                "Import downloads the images from a gallery page on the web.\n\n"
+                "“{}” is a folder on this PC — its images are already here. "
+                "Double-click it to pick one.".format(fav.get("label", loc)),
+                parent=self.root)
+            return
+
+        self._cancel_event = threading.Event()
+        self.is_running = True
+        self._set_running_state(True)
+        self._set_status("Reading gallery…")
+        self._log_separator()
+        self._log(f"Import from: {loc}", "cyan")
+        self._progress_start()
+        threading.Thread(target=self._do_find_gallery, args=(loc,),
+                         daemon=True).start()
+
+    def _do_find_gallery(self, loc):
+        try:
+            urls = gallery.find_images(loc, self._log_threadsafe)
+        except Exception as exc:
+            self.root.after(0, lambda e=str(exc): self._import_failed(e))
+            return
+        self.root.after(0, lambda: self._ask_import_folder(loc, urls))
+
+    def _ask_import_folder(self, loc, urls):
+        """Between finding and fetching: where should these go?"""
+        self._progress_stop()
+        if not urls:
+            self._import_over()
+            self._log("No images found on that page.", "yellow")
+            self._log("   A gallery whose images load by script may not list "
+                      "them in its HTML.", "dim")
+            self._set_status("Nothing to import")
+            return
+
+        dialog = NameDialog(
+            self.root, "Import Gallery",
+            "Found {} image{} at\n{}\n\n"
+            "They will be saved in your image store, in a folder of this "
+            "name. Clear the box to put them straight into the store.".format(
+                len(urls), "" if len(urls) == 1 else "s", loc),
+            self.theme_name,
+            prefill=gallery.suggest_folder(loc),
+            label="Folder in the image store:", allow_empty=True)
+        self.root.wait_window(dialog)
+        if dialog.result is None:
+            self._import_over()
+            self._log("Import cancelled.", "yellow")
+            self._set_status("Import cancelled")
+            return
+
+        dest = STORE_DIR / dialog.result if dialog.result else STORE_DIR
+        self._log(f"Saving into: {dest}", "cyan")
+        self._progress_set(0, len(urls))
+        threading.Thread(target=self._do_import_gallery,
+                         args=(urls, dest), daemon=True).start()
+
+    def _do_import_gallery(self, urls, dest):
+        t0 = time.monotonic()
+        label = "Import gallery"
+        try:
+            def _progress(i, total, name):
+                self._set_status(f"Downloading {i}/{total}  {name}")
+                self.root.after(0, lambda: self._progress_set(i, total))
+
+            saved, skipped, failed = gallery.download(
+                urls, dest, log=self._log_threadsafe,
+                cancel=self._cancel_event, progress=_progress)
+
+            elapsed = time.monotonic() - t0
+            self._log_threadsafe(
+                "Imported {} image{}{}{}.".format(
+                    saved, "" if saved == 1 else "s",
+                    f", skipped {skipped}" if skipped else "",
+                    f", {failed} failed" if failed else ""),
+                "green" if saved else "yellow")
+            self.root.after(0, lambda e=elapsed: self._banner_success(label, e))
+        except InterruptedError:
+            elapsed = time.monotonic() - t0
+            self.root.after(0, lambda e=elapsed: self._banner_cancelled(label, e))
+        except Exception as exc:
+            elapsed = time.monotonic() - t0
+            self.root.after(0, lambda e=elapsed, x=str(exc):
+                            self._banner_error(label, e, x))
+        finally:
+            self.root.after(0, self._import_over)
+            self.root.after(0, self._refresh_store_list)
+
+    def _import_failed(self, detail):
+        self._import_over()
+        self._log(f"✖  Could not read that gallery: {detail}", "red")
+        self._set_status("Import failed")
+
+    def _import_over(self):
+        """Hand the app back: nothing is running any more."""
+        self.is_running = False
+        self._progress_stop()
+        self._set_running_state(False)
 
     def _restore_default_favorites(self):
         favs = self.cfg.get("favorites") or []

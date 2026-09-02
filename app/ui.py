@@ -261,6 +261,18 @@ def _build_gallery_tab(app, parent):
             "• Or drag a URL onto this button")
     dnd_mod.setup_dnd_on(add_url_btn, app._on_drop_on_add_btn, app._dnd_available)
 
+    c = BTN_COLORS["success"]
+    imp_btn = tk.Button(fav_btn_row, text="⬇ Import",
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              font=scaling.font("Segoe UI", 8), command=app._import_gallery)
+    imp_btn.pack(side=tk.LEFT, padx=(0, 4))
+    Tooltip(imp_btn,
+            "Download images from this URL and add to image store.\n\n"
+            "Select a gallery URL first. You are shown how many images\n"
+            "were found, and offered a folder to keep them in — named\n"
+            "after the gallery, and yours to change.\n"
+            "Thumbnails are left behind; Esc cancels.")
+
     c = BTN_COLORS["danger"]
     rem_btn = tk.Button(fav_btn_row, text="Remove",
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],

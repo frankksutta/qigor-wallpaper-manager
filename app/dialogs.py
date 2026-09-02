@@ -221,10 +221,13 @@ class NameDialog(tk.Toplevel):
     """
 
     def __init__(self, parent, title, prompt, theme_name="dark",
-                 prefill="", label="Name:"):
+                 prefill="", label="Name:", allow_empty=False):
         super().__init__(parent)
         self.title(title)
         self.result = None
+        # Cleared means something in its own right when the answer names a
+        # folder to make: no folder, put them where they are going anyway.
+        self._allow_empty = allow_empty
         t = THEMES.get(theme_name, THEMES["dark"])
         self.configure(bg=t["bg"])
         self.resizable(True, False)
@@ -264,7 +267,7 @@ class NameDialog(tk.Toplevel):
 
     def _ok(self):
         text = self._var.get().strip()
-        if text:
+        if text or self._allow_empty:
             self.result = text
             self.destroy()
 
