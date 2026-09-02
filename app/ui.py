@@ -10,6 +10,8 @@ from .constants import (APP_NAME, APP_VERSION, THEMES, BTN_COLORS,
                         CONSOLE_COLORS, WALLPAPER_STYLES, STORE_DIR)
 from . import scaling
 from .tooltip import Tooltip
+from .slideshow import SlideshowPanel
+from .reminder import ReminderPanel
 from . import dnd as dnd_mod
 
 try:
@@ -126,7 +128,7 @@ def build_ui(app):
     remind_lbl = "⏰ Reminder ✔" if app.cfg.get("reminder_set") else "⏰ Set Reminder"
     app._remind_btn = tk.Button(toolbar, text=remind_lbl,
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              command=app._show_reminder_dialog)
+              command=app._show_reminder_tab)
     app._remind_btn.pack(side=tk.LEFT, padx=(4, 2))
     Tooltip(app._remind_btn,
             "Schedule a gentle Windows notification to remind you\n"
@@ -137,7 +139,7 @@ def build_ui(app):
     slideshow_lbl = getattr(app, "_slideshow_lbl_value", "🖼 Slideshow")
     app._slideshow_btn = tk.Button(toolbar, text=slideshow_lbl,
               bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              command=app._show_slideshow_dialog)
+              command=app._show_slideshow_tab)
     app._slideshow_btn.pack(side=tk.LEFT, padx=(4, 2))
     Tooltip(app._slideshow_btn,
             "Auto-rotate wallpapers from your store folder.\n"
@@ -157,11 +159,23 @@ def build_ui(app):
                                      bg="#555555")
     app._main_pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
 
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    # Wallpaper / Slideshow / Reminder. The console is added to the paned window
+    # *below* the notebook rather than inside it, so switching tabs never hides
+    # the log — which is the whole reason Slideshow and Reminder stopped being
+    # modal windows: they covered the console at the exact moment it was
+    # reporting what they had just done.
+    app._notebook = ttk.Notebook(app._main_pane)
+    app._main_pane.add(app._notebook, stretch="always", minsize=300)
+
+    tab_wallpaper = tk.Frame(app._notebook)
+    app._notebook.add(tab_wallpaper, text="  🖼  Wallpaper  ")
+
     # ── Horizontal PanedWindow (left | right) ─────────────────────────────────
-    app._h_pane = tk.PanedWindow(app._main_pane, orient=tk.HORIZONTAL,
+    app._h_pane = tk.PanedWindow(tab_wallpaper, orient=tk.HORIZONTAL,
                                    sashrelief=tk.RAISED, sashwidth=6,
                                    bg="#555555")
-    app._main_pane.add(app._h_pane, stretch="always", minsize=300)
+    app._h_pane.pack(fill=tk.BOTH, expand=True)
 
     # ─────────────────────────  LEFT COLUMN  ──────────────────────────────────
     left = tk.Frame(app._h_pane)
@@ -497,6 +511,20 @@ def build_ui(app):
             "• Double-click a folder → browse images inside\n"
             "• Double-click a URL → open in browser\n"
             "• Right-click any item → Delete / Rename label")
+
+    # ── Slideshow and Reminder tabs ───────────────────────────────────────────
+    # Built once and kept. As dialogs these were rebuilt from disk on every
+    # open; as tabs they hold their state, and their buttons report back
+    # through on_result instead of the old wait_window handshake.
+    app._slideshow_panel = SlideshowPanel(app._notebook, app.cfg, app.theme_name,
+                                          on_result=app._on_slideshow_result)
+    app._notebook.add(app._slideshow_panel, text="  ▶  Slideshow  ")
+
+    app._reminder_panel = ReminderPanel(app._notebook, app.cfg, app.theme_name,
+                                        on_result=app._on_reminder_result)
+    app._notebook.add(app._reminder_panel, text="  ⏰  Reminder  ")
+
+    app._notebook.bind("<<NotebookTabChanged>>", app._on_tab_changed)
 
     # ── Console ───────────────────────────────────────────────────────────────
     console_outer = tk.Frame(app._main_pane)

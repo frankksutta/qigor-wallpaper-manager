@@ -21,8 +21,7 @@ from . import scaling
 from .config import Config
 from .tooltip import Tooltip
 from .dialogs import AboutDialog, _InputDialog, _RenameDialog
-from .reminder import _ReminderDialog
-from .slideshow import (SlideshowDialog, is_scheduled as slideshow_is_scheduled,
+from .slideshow import (is_scheduled as slideshow_is_scheduled,
                         slideshow_runner_is_stale, slideshow_last_run_failed)
 from .desktop_preview import start_preview
 
@@ -985,16 +984,43 @@ class App:
                 "⚠  Slideshow last run failed ({})."
                 "  Open Slideshow → 📋 Log for details.".format(detail), "yellow")
 
-    def _show_slideshow_dialog(self):
-        dialog = SlideshowDialog(self.root, self.cfg, self.theme_name)
-        self.root.wait_window(dialog)
-        if dialog.result == "started":
+    def _select_tab(self, widget):
+        """Bring a tab to the front. The toolbar buttons are now navigation."""
+        try:
+            self._notebook.select(widget)
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _show_slideshow_tab(self):
+        self._select_tab(self._slideshow_panel)
+
+    def _on_tab_changed(self, _event=None):
+        """
+        Refresh a panel as it comes to the front.
+
+        As dialogs these re-read the scheduler on every open. Built once as
+        tabs, a status queried ten minutes ago would otherwise just sit there
+        claiming the slideshow is running after it was stopped elsewhere.
+        """
+        try:
+            current = self._notebook.nametowidget(self._notebook.select())
+        except (tk.TclError, AttributeError):
+            return
+        if current is getattr(self, "_slideshow_panel", None):
+            current._refresh_status()
+
+    def _show_reminder_tab(self):
+        self._select_tab(self._reminder_panel)
+
+    def _on_slideshow_result(self, result):
+        """Called by the Slideshow tab after an action. Nothing is waited on."""
+        if result == "started":
             self._slideshow_btn.config(text="🖼 Slideshow ✔")
             self._log("Wallpaper slideshow started.", "green")
-        elif dialog.result == "stopped":
+        elif result == "stopped":
             self._slideshow_btn.config(text="🖼 Slideshow")
             self._log("Wallpaper slideshow stopped.", "yellow")
-        elif dialog.result == "next":
+        elif result == "next":
             from .slideshow import load_state as ss_load_state
             state = ss_load_state()
             last = state.get("last_file", "")
@@ -1004,14 +1030,13 @@ class App:
                 self._log("⏭  Slideshow advanced to next image.", "cyan")
             self.root.after(500, self._show_current_wallpaper)
 
-    def _show_reminder_dialog(self):
-        dialog = _ReminderDialog(self.root, self.cfg, self.theme_name)
-        self.root.wait_window(dialog)
-        if dialog.result == "set":
+    def _on_reminder_result(self, result):
+        """Called by the Reminder tab after an action."""
+        if result == "set":
             self.cfg.set("reminder_set", True)
             self._remind_btn.config(text="⏰ Reminder ✔")
             self._log("Wallpaper reminder scheduled.", "green")
-        elif dialog.result == "removed":
+        elif result == "removed":
             self.cfg.set("reminder_set", False)
             self._remind_btn.config(text="⏰ Set Reminder")
             self._log("Wallpaper reminder removed.", "yellow")
@@ -1134,6 +1159,7 @@ class App:
             try: child.configure(bg=t["status_bg"], fg=t["status_fg"])
             except tk.TclError: pass
         self.theme_btn.config(text="☀" if self.theme_name == "dark" else "🌙")
+        self._apply_ttk_theme(t)
         # Colours only. The tags' fonts are the registered Font objects set up
         # in build_ui, and re-stating them here as tuples would freeze the
         # console at whatever size it was when the theme last changed.
@@ -1142,6 +1168,48 @@ class App:
             self.console.tag_configure(tag, foreground=color)
         self.console.tag_configure("default", foreground=t["console_fg"])
         self._apply_theme_recursive(self.root, t)
+        # The recursive pass paints every Label with the plain foreground, which
+        # flattens the panels' status colours. They re-assert their own.
+        for panel in ("_slideshow_panel", "_reminder_panel"):
+            p = getattr(self, panel, None)
+            if p is not None and hasattr(p, "retheme"):
+                p.retheme(self.theme_name)
+
+    def _apply_ttk_theme(self, t):
+        """
+        Colour the ttk widgets — the notebook tabs above all.
+
+        ttk ignores tk colour options entirely, so an untouched Notebook keeps
+        its native light styling and the tab strip glows white above a dark
+        app. The native Windows themes ("vista", "xpnative") also refuse to
+        honour a tab background at all, so this switches to "clam", which does.
+        That is a visible change to Combobox and Progressbar too — they become
+        flat rather than native — but it is the price of tabs that match the
+        theme, and it keeps both themes internally consistent.
+        """
+        style = ttk.Style()
+        try:
+            if style.theme_use() != "clam":
+                style.theme_use("clam")
+        except tk.TclError:
+            return
+        style.configure("TNotebook", background=t["bg"], borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(14, 6),
+                        background=t["btn_bg"], foreground=t["fg"],
+                        bordercolor=t["bg"], lightcolor=t["btn_bg"],
+                        darkcolor=t["btn_bg"])
+        style.map("TNotebook.Tab",
+                  background=[("selected", t["bg"]), ("active", t["entry_bg"])],
+                  foreground=[("selected", t["fg"])],
+                  lightcolor=[("selected", t["bg"])],
+                  expand=[("selected", (0, 0, 0, 0))])
+        for name in ("TCombobox", "TProgressbar", "TSeparator", "TSizegrip"):
+            try:
+                style.configure(name, background=t["bg"], fieldbackground=t["entry_bg"],
+                                foreground=t["entry_fg"], troughcolor=t["entry_bg"],
+                                arrowcolor=t["fg"], bordercolor=t["btn_bg"])
+            except tk.TclError:
+                pass
 
     def _apply_theme_recursive(self, widget, t):
         w = widget
@@ -1163,7 +1231,11 @@ class App:
                 if widget.cget("bg") not in {v["bg"] for v in BTN_COLORS.values()}:
                     widget.configure(bg=t["btn_bg"], fg=t["btn_fg"],
                                      activebackground=t["btn_bg"])
-            elif wtype == "Checkbutton":
+            # Radiobutton matters now that the Slideshow and Reminder panels
+            # live in tabs: as dialogs they were rebuilt per open and never saw
+            # a theme change, so one left unstyled kept its old background as a
+            # bright block on the newly-switched panel.
+            elif wtype in ("Checkbutton", "Radiobutton"):
                 widget.configure(bg=t["bg"], fg=t["fg"],
                                  selectcolor=t["entry_bg"],
                                  activebackground=t["bg"])

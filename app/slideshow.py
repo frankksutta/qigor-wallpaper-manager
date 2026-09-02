@@ -477,25 +477,26 @@ def slideshow_is_overdue() -> "tuple[bool, str]":
     return False, ""
 
 
-# ── Dialog ────────────────────────────────────────────────────────────────────
+# ── Panel ─────────────────────────────────────────────────────────────────────
 
-class SlideshowDialog(tk.Toplevel):
+class SlideshowPanel(tk.Frame):
     """
     Configure and control the wallpaper slideshow.
-    result: "started" | "stopped" | "next" | None
+
+    A tab rather than a modal window. As a Toplevel it sat on top of the
+    console, which is where the app reports what the slideshow just did, and
+    every open rebuilt its state from disk. `on_result` replaces the old
+    wait_window/result handshake, since nothing waits on a tab.
     """
 
-    def __init__(self, parent, cfg, theme_name):
+    def __init__(self, parent, cfg, theme_name, on_result=None):
         super().__init__(parent)
-        self.title("Wallpaper Slideshow")
         self.result   = None
+        self._on_result = on_result
         self._cfg     = cfg
 
         t = THEMES.get(theme_name, THEMES["dark"])
         self.configure(bg=t["bg"])
-        self.resizable(True, False)
-        self.minsize(500, 0)
-        self.grab_set()
         fn  = scaling.font("Segoe UI", 10)
         fnb = scaling.font("Segoe UI", 10, "bold")
         fns = scaling.font("Segoe UI", 9)
@@ -507,8 +508,6 @@ class SlideshowDialog(tk.Toplevel):
         saved_shuffle  = state.get("shuffle",      True)
         saved_style    = state.get("style",
                                    cfg.get("wallpaper_style") or "Fill")
-
-        ttk.Sizegrip(self).place(relx=1.0, rely=1.0, anchor="se")
 
         # ── Buttons ───────────────────────────────────────────────────────────
         btn_row = tk.Frame(self, bg=t["bg"])
@@ -562,11 +561,6 @@ class SlideshowDialog(tk.Toplevel):
                 "Your current wallpaper stays as-is.\n"
                 "(Only available while the slideshow is running.)")
 
-        btn_close = tk.Button(btn_row, text="Close", height=2, font=fn,
-                  bg=t["btn_bg"], fg=t["btn_fg"],
-                  command=self.destroy)
-        btn_close.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        Tooltip(btn_close, "Close this window.\nThe slideshow keeps running in the background.")
 
         # ── Body ──────────────────────────────────────────────────────────────
         body = tk.Frame(self, bg=t["bg"])
@@ -658,9 +652,18 @@ class SlideshowDialog(tk.Toplevel):
                  text="Tip: images are added to the pool automatically "
                       "whenever you save a wallpaper to the store.").pack(anchor=tk.W)
 
-        self.bind("<Escape>", lambda _: self.destroy())
-
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _finish(self, result):
+        """Tell the app what happened. Nothing closes — this is a tab."""
+        self.result = result
+        if self._on_result:
+            self._on_result(result)
+
+    def retheme(self, theme_name):
+        """Re-apply the colours this panel owns after the app repaints it."""
+        self._theme_name = theme_name
+        self._refresh_status()
 
     def _set_running_state(self, running: bool):
         """Enable/disable buttons that only make sense when the task is (not) running."""
@@ -767,27 +770,27 @@ class SlideshowDialog(tk.Toplevel):
                   bg=t["btn_bg"], fg=t["btn_fg"]).pack(pady=4)
 
         if ok:
-            self.result = "started"
             self._status_var.set(query_task_status())
             self._set_running_state(True)
+            self._finish("started")
 
-            # Auto-close result window after 3s, then close dialog.
-            # User may have closed either window already — ignore TclError.
+            # Dismiss the result window after 3s. Only that window — the panel
+            # stays put, and the user may have closed the window already.
             def _auto_close():
-                for w in (rw, self):
-                    try:
-                        w.destroy()
-                    except tk.TclError:
-                        pass
+                try:
+                    rw.destroy()
+                except tk.TclError:
+                    pass
             rw.after(3000, _auto_close)
 
     def _stop(self):
         if remove_task():
-            self.result = "stopped"
+            self._set_running_state(False)
+            self._refresh_status()
             messagebox.showinfo("Stopped",
                 "Slideshow task removed.\n"
                 "Your current wallpaper stays until you change it.", parent=self)
-            self.destroy()
+            self._finish("stopped")
         else:
             messagebox.showinfo("Not Running",
                 "No slideshow task was scheduled.", parent=self)
@@ -805,8 +808,7 @@ class SlideshowDialog(tk.Toplevel):
         self._save_state_from_ui()
         try:
             _run_next_headless(force=True)
-            self.result = "next"
-            self.destroy()
+            self._finish("next")
         except Exception as e:
             messagebox.showerror("Error", str(e), parent=self)
 

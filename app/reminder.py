@@ -1,6 +1,6 @@
 """
 reminder.py  —  QiGor Wallpaper Manager
-_ReminderDialog and Windows Task Scheduler integration.
+ReminderPanel and Windows Task Scheduler integration.
 """
 from __future__ import annotations
 import subprocess
@@ -18,18 +18,22 @@ from . import scaling
 
 
 
-class _ReminderDialog(tk.Toplevel):
+class ReminderPanel(tk.Frame):
     """
-    Dialog to schedule a Windows Task Scheduler task that fires a
-    winotify toast reminder to change the wallpaper.
-    result: "set" | "removed" | None
+    Schedules a Windows Task Scheduler task that fires a winotify toast
+    reminding you to change the wallpaper.
+
+    A tab rather than a modal window. As a Toplevel it covered the console at
+    exactly the moment it was writing the result of what you just did, and its
+    state was rebuilt from scratch on every open. `on_result` replaces the old
+    wait_window/result handshake, since nothing waits on a tab.
     """
     TASK_NAME = "QiGorWallpaperReminder"
 
-    def __init__(self, parent, cfg, theme_name):
+    def __init__(self, parent, cfg, theme_name, on_result=None):
         super().__init__(parent)
-        self.title("Wallpaper Change Reminder")
         self.result = None
+        self._on_result = on_result
         self._cfg   = cfg
         self._app_dir = HELPERS_DIR
         # Launch target for toast notification — EXE if frozen, else .pyw
@@ -43,9 +47,6 @@ class _ReminderDialog(tk.Toplevel):
         self._theme = theme_name
         t = THEMES.get(theme_name, THEMES["dark"])
         self.configure(bg=t["bg"])
-        self.resizable(True, False)
-        self.minsize(480, 0)
-        self.grab_set()
         fn  = scaling.font("Segoe UI", 10)
         fnb = scaling.font("Segoe UI", 10, "bold")
         fns = scaling.font("Segoe UI", 9)
@@ -56,8 +57,6 @@ class _ReminderDialog(tk.Toplevel):
         saved_ndays = cfg.get("reminder_ndays") or "7"
         saved_hour  = cfg.get("reminder_hour")  or "09"
         saved_min   = cfg.get("reminder_min")   or "00"
-
-        ttk.Sizegrip(self).place(relx=1.0, rely=1.0, anchor="se")
 
         btn_row = tk.Frame(self, bg=t["bg"])
         btn_row.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(4, 12))
@@ -82,9 +81,6 @@ class _ReminderDialog(tk.Toplevel):
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
                   command=self._remove).pack(side=tk.LEFT, fill=tk.X,
                                              expand=True, padx=(0, 4))
-        tk.Button(btn_row, text="Cancel", height=2, font=fn,
-                  bg=t["btn_bg"], fg=t["btn_fg"],
-                  command=self.destroy).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         body = tk.Frame(self, bg=t["bg"])
         body.pack(fill=tk.BOTH, padx=16, pady=(14, 6))
@@ -188,7 +184,16 @@ class _ReminderDialog(tk.Toplevel):
                  wraplength=440, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 4))
 
         self._on_freq_change()
-        self.bind("<Escape>", lambda _: self.destroy())
+
+    def _finish(self, result):
+        """Tell the app what happened. Nothing closes — this is a tab."""
+        self.result = result
+        if self._on_result:
+            self._on_result(result)
+
+    def retheme(self, theme_name):
+        """Re-apply the colours this panel owns after the app repaints it."""
+        self._theme = theme_name
 
     def _check_winotify(self):
         try:
@@ -280,7 +285,6 @@ class _ReminderDialog(tk.Toplevel):
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
                 self._save_settings()
-                self.result = "set"
                 query = subprocess.run(
                     ["schtasks", "/query", "/tn", self.TASK_NAME, "/fo", "LIST"],
                     capture_output=True, text=True)
@@ -288,7 +292,7 @@ class _ReminderDialog(tk.Toplevel):
                 messagebox.showinfo("Reminder Scheduled",
                     f"Task scheduled — use 'Test Toast Now' to verify.\n\n"
                     "Runner: {}\n\n{}".format(self._get_exe_runner()[0], detail), parent=self)
-                self.destroy()
+                self._finish("set")
             else:
                 messagebox.showerror("Scheduler Error",
                     f"schtasks command:\n{' '.join(cmd)}\n\n"
@@ -355,7 +359,6 @@ class _ReminderDialog(tk.Toplevel):
             subprocess.run(
                 ["schtasks", "/delete", "/f", "/tn", self.TASK_NAME],
                 capture_output=True, text=True)
-            self.result = "removed"
-            self.destroy()
+            self._finish("removed")
         except Exception as e:
             messagebox.showerror("Error", str(e), parent=self)
