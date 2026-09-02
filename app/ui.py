@@ -21,6 +21,88 @@ except ImportError:
     PIL_AVAILABLE = False
 
 
+def _build_lock_tab(app, parent):
+    """
+    The Windows lock screen controls, in their own tab.
+
+    They act on whatever image is selected on the Wallpaper tab, so that
+    selection is echoed here — as two bare buttons in a column they gave no
+    clue what they were about to apply.
+    """
+    dim = CONSOLE_COLORS[app.theme_name]["dim"]
+
+    body = tk.Frame(parent)
+    body.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
+
+    tk.Label(body, text="Windows Lock Screen", anchor=tk.W,
+             font=scaling.font("Segoe UI", 12, "bold")).pack(fill=tk.X)
+    tk.Label(body, anchor=tk.W, justify=tk.LEFT, wraplength=640, fg=dim,
+             font=scaling.font("Segoe UI", 9),
+             text="Sets the image Windows shows before you sign in. This is a "
+                  "machine-wide policy, so Windows asks for permission (UAC) "
+                  "each time it changes — the app stays open while a small "
+                  "helper applies it and exits."
+             ).pack(fill=tk.X, pady=(2, 12))
+
+    sel = tk.LabelFrame(body, text="  Image to apply  ")
+    sel.pack(fill=tk.X, pady=(0, 12))
+    # Echoed through a second variable so an empty selection says so, rather
+    # than leaving a framed blank that looks like the panel failed to load.
+    app._lock_sel_var = tk.StringVar()
+
+    def _echo_selection(*_):
+        chosen = app._pending_path.get().strip()
+        app._lock_sel_var.set(chosen or "(nothing selected yet)")
+
+    app._pending_path.trace_add("write", _echo_selection)
+    _echo_selection()
+
+    tk.Label(sel, textvariable=app._lock_sel_var, anchor=tk.W, justify=tk.LEFT,
+             wraplength=620, font=scaling.font("Consolas", 9)
+             ).pack(fill=tk.X, padx=8, pady=6)
+    tk.Label(sel, anchor=tk.W, fg=dim, font=scaling.font("Segoe UI", 8),
+             text="Chosen on the Wallpaper tab — drop a file, paste a URL, or Browse."
+             ).pack(fill=tk.X, padx=8, pady=(0, 6))
+
+    row = tk.Frame(body)
+    row.pack(fill=tk.X)
+
+    c = BTN_COLORS["warning"]
+    app.lock_btn = tk.Button(row, text="🔒  Set Lock Screen", height=2,
+        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+        font=scaling.font("Segoe UI", 10, "bold"),
+        command=app._set_lock_screen)
+    app.lock_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+    Tooltip(app.lock_btn,
+            "Set the Windows lock screen image.\n\n"
+            "A Windows permission (UAC) prompt will appear briefly.\n"
+            "The app stays open — a small helper runs the change and exits.")
+
+    c = BTN_COLORS["primary"]
+    app._ls_pers_btn = tk.Button(row, text="⚙ Lock", height=2,
+        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+        font=scaling.font("Segoe UI", 10),
+        command=app._ls_personalize_or_release)
+    app._ls_pers_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+    Tooltip(app._ls_pers_btn,
+            "Open Settings → Personalization → Lock screen.\n"
+            "If a custom image policy is active, releases it first (UAC prompt)\n"
+            "then opens Settings so you can change the lock screen mode.")
+
+    c = BTN_COLORS["success"]
+    cur_btn = tk.Button(row, text="🔒  Show Current", height=2,
+        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+        font=scaling.font("Segoe UI", 10),
+        # The preview pane lives on the Wallpaper tab, so go there too —
+        # otherwise this loads an image the user cannot see.
+        command=lambda: (app._show_current_lock_screen(),
+                         app._select_tab(app._tab_wallpaper)))
+    cur_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    Tooltip(cur_btn,
+            "Load the lock screen image Windows is using now into the\n"
+            "Preview pane, and switch to the Wallpaper tab to show it.")
+
+
 def build_ui(app):
     """Build the entire main window UI onto app (App instance)."""
     root = app.root
@@ -32,17 +114,18 @@ def build_ui(app):
     # not the name "TkMenuFont" — so later changes to that named font never
     # reach it, and the menu bar would be the one thing A+/A− left behind.
     # 9 is what Windows uses, so 100% still looks native.
+    # Not root.config(menu=...): Windows draws a real menu bar itself and
+    # ignores Tk's colours for it, so a native bar stays a bright white strip
+    # across the top of the dark theme — the one thing in the window that
+    # refused to follow it. Two Menubuttons in an ordinary Frame pop the same
+    # menus, take the theme, and scale with A+/A−.
     menu_font = scaling.font("Segoe UI", 9)
-    menubar = tk.Menu(root, font=menu_font)
-    root.config(menu=menubar)
-    file_menu = tk.Menu(menubar, tearoff=0, font=menu_font)
-    menubar.add_cascade(label="File", menu=file_menu)
+    file_menu = tk.Menu(root, tearoff=0, font=menu_font)
     file_menu.add_command(label="Browse for Image…", command=app._browse_image)
     file_menu.add_command(label="Clear Log   Ctrl+L", command=app._clear_log)
     file_menu.add_separator()
     file_menu.add_command(label="Exit", command=app._on_close)
-    help_menu = tk.Menu(menubar, tearoff=0, font=menu_font)
-    menubar.add_cascade(label="Help", menu=help_menu)
+    help_menu = tk.Menu(root, tearoff=0, font=menu_font)
     help_menu.add_command(label="Check for Updates…", command=app._check_updates)
     # Only offered when running from a loose folder — an installed copy has
     # nowhere left to install itself to.
@@ -55,6 +138,17 @@ def build_ui(app):
         help_menu.add_command(label="Uninstall QiGor…", command=app._uninstall)
     help_menu.add_separator()
     help_menu.add_command(label="About   F1", command=app._show_about)
+
+    menu_strip = tk.Frame(root)
+    menu_strip.pack(side=tk.TOP, fill=tk.X)
+    for label, menu in (("File", file_menu), ("Help", help_menu)):
+        mbtn = tk.Menubutton(menu_strip, text=label, menu=menu, font=menu_font,
+                             padx=10, pady=3, relief=tk.FLAT)
+        mbtn.pack(side=tk.LEFT)
+
+    # Kept so a theme toggle can repaint the drop-downs; Tk gives no way to
+    # enumerate the menus belonging to a window.
+    app._menus = [file_menu, help_menu]
 
     root.after(0, app._place_sizegrip)
 
@@ -70,7 +164,11 @@ def build_ui(app):
              ).pack(side=tk.RIGHT, padx=(0, 20))
 
     # ── Progress bar ──────────────────────────────────────────────────────────
-    app._progress = ttk.Progressbar(root, orient=tk.HORIZONTAL, mode="indeterminate")
+    # determinate at rest: an idle *indeterminate* bar draws its slider parked
+    # at the left edge under the clam theme, which reads as a stray blue block
+    # across the bottom of the window. _progress_start switches it over.
+    app._progress = ttk.Progressbar(root, orient=tk.HORIZONTAL,
+                                    mode="determinate", value=0)
     app._progress.pack(side=tk.BOTTOM, fill=tk.X)
 
     # ── Toolbar ───────────────────────────────────────────────────────────────
@@ -169,6 +267,7 @@ def build_ui(app):
     app._main_pane.add(app._notebook, stretch="always", minsize=300)
 
     tab_wallpaper = tk.Frame(app._notebook)
+    app._tab_wallpaper = tab_wallpaper
     app._notebook.add(tab_wallpaper, text="  🖼  Wallpaper  ")
 
     # ── Horizontal PanedWindow (left | right) ─────────────────────────────────
@@ -306,29 +405,7 @@ def build_ui(app):
             "Open Windows Settings → Personalization → Background.\n"
             "Set desktop background to Picture, Slideshow, or Spotlight.")
 
-    # ── Action row 2: Set Lock Screen | ⚙ Lock ───────────────────────────────
-    btn_row2 = tk.Frame(left)
-    btn_row2.pack(fill=tk.X, pady=(0, 2))
-
-    c = BTN_COLORS["warning"]
-    app.lock_btn = tk.Button(btn_row2, text="🔒  Set Lock Screen", height=2,
-        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-        command=app._set_lock_screen)
-    app.lock_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-    Tooltip(app.lock_btn,
-            "Set the Windows lock screen image.\n\n"
-            "A Windows permission (UAC) prompt will appear briefly.\n"
-            "The app stays open — a small helper runs the change and exits.")
-
-    c = BTN_COLORS["primary"]
-    app._ls_pers_btn = tk.Button(btn_row2, text="⚙ Lock", height=2,
-        bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-        command=app._ls_personalize_or_release)
-    app._ls_pers_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
-    Tooltip(app._ls_pers_btn,
-            "Open Settings → Personalization → Lock screen.\n"
-            "If a custom image policy is active, releases it first (UAC prompt)\n"
-            "then opens Settings so you can change the lock screen mode.")
+    # Lock screen now has its own tab — see _build_lock_tab.
 
     # ── Action row 3: Show Desktop | Cancel D-load ───────────────────────────
     btn_row3 = tk.Frame(left)
@@ -435,11 +512,9 @@ def build_ui(app):
             "Preview the wallpaper currently set on your desktop.\n"
             "Reads the path directly from the Windows registry.")
 
-    cur_ls_prev_btn = tk.Button(btn_row_prev, text="🖥  Current Lock Screen",
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=scaling.font("Segoe UI", 9), command=app._show_current_lock_screen)
-    cur_ls_prev_btn.pack(side=tk.LEFT)
-    Tooltip(cur_ls_prev_btn, "Preview the image currently set as your lock screen.")
+    # "Current Lock Screen" used to sit here too. It now lives on the Lock
+    # Screen tab, which brings you back here to look at the result — three
+    # buttons no longer fit this row and the third was being clipped.
 
 
 
@@ -511,6 +586,11 @@ def build_ui(app):
             "• Double-click a folder → browse images inside\n"
             "• Double-click a URL → open in browser\n"
             "• Right-click any item → Delete / Rename label")
+
+    # ── Lock Screen tab ───────────────────────────────────────────────────────
+    lock_tab = tk.Frame(app._notebook)
+    app._notebook.add(lock_tab, text="  🔒  Lock Screen  ")
+    _build_lock_tab(app, lock_tab)
 
     # ── Slideshow and Reminder tabs ───────────────────────────────────────────
     # Built once and kept. As dialogs these were rebuilt from disk on every

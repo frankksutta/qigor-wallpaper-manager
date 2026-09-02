@@ -1159,6 +1159,7 @@ class App:
             try: child.configure(bg=t["status_bg"], fg=t["status_fg"])
             except tk.TclError: pass
         self.theme_btn.config(text="☀" if self.theme_name == "dark" else "🌙")
+        self._apply_menu_theme(t)
         self._apply_ttk_theme(t)
         # Colours only. The tags' fonts are the registered Font objects set up
         # in build_ui, and re-stating them here as tuples would freeze the
@@ -1174,6 +1175,24 @@ class App:
             p = getattr(self, panel, None)
             if p is not None and hasattr(p, "retheme"):
                 p.retheme(self.theme_name)
+
+    def _apply_menu_theme(self, t):
+        """
+        Colour the menu bar and its drop-downs.
+
+        Left alone, the menu bar is a bright white strip across the top of a
+        dark window -- it does not inherit the theme the way ordinary widgets
+        do. Windows draws the bar itself, so how much of this it honours is up
+        to the OS; the drop-downs follow reliably.
+        """
+        for menu in getattr(self, "_menus", []):
+            try:
+                menu.configure(bg=t["bg"], fg=t["fg"],
+                               activebackground="#3a6ea5",
+                               activeforeground="#ffffff",
+                               borderwidth=0, relief=tk.FLAT)
+            except tk.TclError:
+                pass
 
     def _apply_ttk_theme(self, t):
         """
@@ -1193,6 +1212,9 @@ class App:
                 style.theme_use("clam")
         except tk.TclError:
             return
+        dim = CONSOLE_COLORS[self.theme_name]["dim"]
+        sel_bg, sel_fg = "#3a6ea5", "#ffffff"
+
         style.configure("TNotebook", background=t["bg"], borderwidth=0)
         style.configure("TNotebook.Tab", padding=(14, 6),
                         background=t["btn_bg"], foreground=t["fg"],
@@ -1203,13 +1225,48 @@ class App:
                   foreground=[("selected", t["fg"])],
                   lightcolor=[("selected", t["bg"])],
                   expand=[("selected", (0, 0, 0, 0))])
-        for name in ("TCombobox", "TProgressbar", "TSeparator", "TSizegrip"):
-            try:
-                style.configure(name, background=t["bg"], fieldbackground=t["entry_bg"],
-                                foreground=t["entry_fg"], troughcolor=t["entry_bg"],
-                                arrowcolor=t["fg"], bordercolor=t["btn_bg"])
-            except tk.TclError:
-                pass
+
+        # A readonly Combobox draws its text as *selected* text, so the colours
+        # that matter are selectbackground/selectforeground, not foreground.
+        # clam's defaults there are pale, which is how the interval and style
+        # pickers ended up white-on-light-grey and unreadable.
+        style.configure("TCombobox", padding=3,
+                        fieldbackground=t["entry_bg"], background=t["btn_bg"],
+                        foreground=t["entry_fg"], arrowcolor=t["fg"],
+                        bordercolor=t["btn_bg"], lightcolor=t["btn_bg"],
+                        darkcolor=t["btn_bg"],
+                        selectbackground=t["entry_bg"],
+                        selectforeground=t["entry_fg"])
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", t["entry_bg"]),
+                                   ("disabled", t["bg"])],
+                  foreground=[("readonly", t["entry_fg"]), ("disabled", dim)],
+                  background=[("readonly", t["btn_bg"]), ("active", t["btn_bg"])],
+                  selectbackground=[("readonly", t["entry_bg"])],
+                  selectforeground=[("readonly", t["entry_fg"])],
+                  arrowcolor=[("disabled", dim)])
+
+        # The drop-down list is a plain Tk listbox in a toplevel of its own —
+        # ttk styling does not reach it, only the option database does.
+        for opt, val in (("*TCombobox*Listbox.background", t["entry_bg"]),
+                         ("*TCombobox*Listbox.foreground", t["entry_fg"]),
+                         ("*TCombobox*Listbox.selectBackground", sel_bg),
+                         ("*TCombobox*Listbox.selectForeground", sel_fg)):
+            self.root.option_add(opt, val)
+
+        style.configure("TEntry", fieldbackground=t["entry_bg"],
+                        foreground=t["entry_fg"], insertcolor=t["entry_fg"],
+                        bordercolor=t["btn_bg"], lightcolor=t["btn_bg"],
+                        darkcolor=t["btn_bg"])
+        style.configure("TProgressbar", background=sel_bg,
+                        troughcolor=t["entry_bg"], bordercolor=t["btn_bg"],
+                        lightcolor=sel_bg, darkcolor=sel_bg)
+        style.configure("TSeparator", background=t["btn_bg"])
+        style.configure("TSizegrip", background=t["bg"])
+        style.configure("TScrollbar", background=t["btn_bg"],
+                        troughcolor=t["bg"], bordercolor=t["bg"],
+                        arrowcolor=t["fg"], lightcolor=t["btn_bg"],
+                        darkcolor=t["btn_bg"])
 
     def _apply_theme_recursive(self, widget, t):
         w = widget
@@ -1239,6 +1296,17 @@ class App:
                 widget.configure(bg=t["bg"], fg=t["fg"],
                                  selectcolor=t["entry_bg"],
                                  activebackground=t["bg"])
+            # Listbox was missing, so History and Saved Locations stayed white
+            # blocks in the dark theme.
+            elif wtype == "Menubutton":
+                widget.configure(bg=t["bg"], fg=t["fg"],
+                                 activebackground=t["btn_bg"],
+                                 activeforeground=t["fg"])
+            elif wtype == "Listbox":
+                widget.configure(bg=t["entry_bg"], fg=t["entry_fg"],
+                                 selectbackground="#3a6ea5",
+                                 selectforeground="#ffffff",
+                                 highlightbackground=t["bg"])
         except tk.TclError:
             pass
         for child in widget.winfo_children():
