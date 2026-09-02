@@ -79,6 +79,20 @@ Driving the GUI from a script, the things that cost the most time:
   script, or call the handler.
 - A log window's master is its panel, not root, so `root.winfo_children()`
   misses it. Walk the whole tree.
+- **`ImageGrab` + Tk coordinates do not line up on this machine**, and the
+  mismatch is silent: the capture looks like a real screenshot with a third of
+  the window missing. Two separate causes, both present here. (a) The display
+  is 3840x2160 at 150% and Tk is DPI-*unaware*, so Windows stretches the
+  window: Tk reports 974px where the pixels are 1461. (b) With
+  `all_screens=True` the bbox is measured from the top-left of the *virtual*
+  desktop, while Tk measures from the primary monitor - so anything left of or
+  above the primary shifts it (67px, here). Fix: call
+  `ctypes.windll.shcore.SetProcessDpiAwareness(1)` **before** `tk.Tk()` and
+  offset the bbox by `GetSystemMetrics(76/77)`. Awareness changes only how
+  large the layout is drawn, not the layout - but every pixel figure measured
+  under it is then 1.5x the app's own, so **never take a sizing decision from
+  a DPI-aware harness**: a console-height "fix" was written against numbers
+  that were all 50% too big and had to be backed out.
 - Screenshots: `PrintWindow` with `PW_RENDERFULLCONTENT`, but
   `CreateCompatibleBitmap` must take the **window** DC — a fresh memory DC
   holds a 1×1 monochrome bitmap, so passing it gives 1 bpp and an all-black

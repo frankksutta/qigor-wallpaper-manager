@@ -4,7 +4,7 @@
      %USERPROFILE%\.claude-teamN\projects\<slug>\memory . OneDrive syncs them between
      machines. NEVER delete/recurse the junction path -- that destroys the real store.
      Set up 2026-08-14; full recipe is in the debabel store: shared-memory-across-accounts.md -->
-- [Open work + session state](qigor-open-work.md) — 16 unpushed commits, 0.8.3 never built, and what playlists/preview/import added on 2026-09-02.
+- [Open work + session state](qigor-open-work.md) — 16 unpushed commits, 0.8.3 never built, what playlists/preview/import added on 2026-09-02, and the sync tool's New Images tab.
 - [Scheduler's one-minute floor](task-scheduler-minute-floor.md) — schtasks rejects PT5S/PT30S, which is why slideshow preview is a Tk timer.
 - [Startup cost is emoji](tk-startup-cost-emoji.md) — 716ms for the first emoji glyph in Tk; never query schtasks on the main thread.
 - [GUI overhaul verified](gui-overhaul-untested-handoff.md) — every tab driven button-by-button at 0.8.3; how to script a modal Tk GUI without deadlocking.

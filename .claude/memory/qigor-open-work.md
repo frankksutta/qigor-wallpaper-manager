@@ -1,6 +1,6 @@
 ---
 name: qigor-open-work
-description: "Where QiGor stands after the 2026-09-02 UI session: 9 commits sitting unpushed, 0.8.3 bumped but never built, and the improvements frank was told about but has not decided on."
+description: "Where QiGor stands after 2026-09-02: 16 commits unpushed, 0.8.3 bumped but never built, the sync tool's new New Images tab, and the improvements frank was told about but has not decided on."
 metadata:
   node_type: memory
   type: project
@@ -115,6 +115,23 @@ colour options, and `ttk.Scrollbar` under the `clam` theme came out beige
 (#dcdad5) rather than the configured colours. Measured at the widgets' real
 coordinates — an earlier reading that said ttk worked was a mis-aimed pixel
 sample. Left alone rather than guessed at.
+
+**2026-09-02, evening: the wallpaper SYNC tool gained a New Images tab**
+(`3ae071d`). That tool is a different app in the same folder -
+`qigor_wallpaper_sync/`, its own git repository with **no remote**, ignored by
+the outer public repo - so its commits are not part of the 16 unpushed ones
+above and there is nowhere to push them to. New `new_images.py` holds the
+logic with no tkinter, 56 checks added to `tests/test_sync.py` (140 total).
+Frank asked for one thing per sentence and got all of them; what he has NOT
+been asked about is that the tab is now the tallest in the notebook at his
+saved zoom (font 13), which costs the shared console about four lines,
+because a ttk.Notebook is as tall as its tallest tab on every tab. Offer to
+shorten the list; do not just do it.
+
+The GUI drive script for that tab (68 checks, real mainloop, every messagebox
+stubbed to a recorder) is in the scratchpad, not the repo - same rule as the
+main app's. It subclasses `Config` onto a temp dir so frank's own config and
+his real I:\ pack are never touched.
 
 Testing this GUI: [[gui-overhaul-untested-handoff]]. Startup cost:
 [[tk-startup-cost-emoji]]. Distribution: [[installer-release-state]].
