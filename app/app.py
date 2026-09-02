@@ -27,6 +27,27 @@ from .slideshow import (slideshow_runner_is_stale,
 from .desktop_preview import start_preview
 
 
+def _url_label(url: str) -> str:
+    """
+    A first guess at what to call a gallery URL.
+
+    The host alone made every archive.org gallery read "archive.org"; the last
+    part of the path is what actually names one. The user edits it anyway —
+    this is only what the box starts out holding.
+    """
+    from urllib.parse import urlparse, unquote
+    parts = urlparse(url)
+    tail = [p for p in parts.path.split("/") if p]
+    if tail:
+        name = unquote(tail[-1])
+        # index.html names nothing; the folder above it does.
+        if name.lower().startswith("index.") and len(tail) > 1:
+            name = unquote(tail[-2])
+        if name:
+            return name[:60]
+    return parts.netloc or url[:40]
+
+
 def _get_exe_dir() -> Path:
     """
     Return the directory containing the running app.
@@ -391,9 +412,12 @@ class App:
 
     def _on_drop_on_add_btn(self, event):
         raw = event.data.strip()
-        resolved, warning = dnd_mod.resolve_drop_data(raw)
+        # want_image=False: these buttons save gallery pages, and the image
+        # resolver turns a page URL away by design.
+        resolved, warning = dnd_mod.resolve_drop_data(raw, want_image=False)
         if not resolved:
-            self._log(f"⚠  Could not resolve dropped item: {raw[:80]}", "yellow")
+            self._log(f"⚠  Could not add the dropped item: "
+                      f"{warning or raw[:80]}", "yellow")
             return
         try:
             event.widget.config(relief=tk.RAISED)
@@ -406,7 +430,7 @@ class App:
             self._save_favorite(Path(resolved).name, resolved)
             self._log(f"Favorite folder added: {resolved}", "green")
         elif is_url:
-            label = resolved.split("/")[2] if "/" in resolved else resolved[:40]
+            label = _url_label(resolved)
             dialog = _InputDialog(self.root, "Add URL Favorite",
                                   f"Confirm label for:\n{resolved[:80]}",
                                   self.theme_name,

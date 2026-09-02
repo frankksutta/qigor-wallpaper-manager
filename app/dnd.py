@@ -54,11 +54,17 @@ def setup_dnd_on(widget, handler, dnd_available: bool):
         pass
 
 
-def resolve_drop_data(raw: str) -> tuple[str | None, str | None]:
+def resolve_drop_data(raw: str,
+                      want_image: bool = True) -> tuple[str | None, str | None]:
     """
     Returns (resolved_str, warning_str).
     resolved_str — usable URL or absolute path, or None
     warning_str  — human-readable problem, or None
+
+    want_image=False accepts a page URL as well. Dropped on the preview, a
+    link to a gallery page is a mistake worth explaining — you meant the image
+    on it. Dropped on Add URL, a gallery page is exactly the thing being
+    saved, and refusing it is the bug.
     """
     items = []
     if raw.startswith("{"):
@@ -90,7 +96,7 @@ def resolve_drop_data(raw: str) -> tuple[str | None, str | None]:
         ext = Path(path_part).suffix
         if ext in IMAGE_EXTS:
             return candidate, None
-        if "." not in Path(path_part).name:
+        if want_image and "." not in Path(path_part).name:
             return None, (
                 f"The dropped URL looks like a page, not an image:\n"
                 f"  {candidate[:100]}\n"
