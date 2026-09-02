@@ -130,12 +130,30 @@ def build_ui(app):
     # refused to follow it. Two Menubuttons in an ordinary Frame pop the same
     # menus, take the theme, and scale with A+/A−.
     menu_font = scaling.font("Segoe UI", 9)
-    file_menu = tk.Menu(root, tearoff=0, font=menu_font)
+
+    menu_strip = tk.Frame(root)
+    menu_strip.pack(side=tk.TOP, fill=tk.X)
+
+    def _drop_down(label):
+        """A Menubutton in the strip, plus the menu it posts."""
+        mbtn = tk.Menubutton(menu_strip, text=label, font=menu_font,
+                             padx=10, pady=3, relief=tk.FLAT)
+        mbtn.pack(side=tk.LEFT)
+        # The menu must be a CHILD of its own menubutton. Parented anywhere
+        # else — root included — Tk accepts the -menu option and the widget
+        # looks right, but the click quietly does nothing: no menu, no error,
+        # and under pythonw no console for one to appear in either.
+        menu = tk.Menu(mbtn, tearoff=0, font=menu_font)
+        mbtn.config(menu=menu)
+        return menu
+
+    file_menu = _drop_down("File")
     file_menu.add_command(label="Browse for Image…", command=app._browse_image)
     file_menu.add_command(label="Clear Log   Ctrl+L", command=app._clear_log)
     file_menu.add_separator()
     file_menu.add_command(label="Exit", command=app._on_close)
-    help_menu = tk.Menu(root, tearoff=0, font=menu_font)
+
+    help_menu = _drop_down("Help")
     help_menu.add_command(label="Check for Updates…", command=app._check_updates)
     # Only offered when running from a loose folder — an installed copy has
     # nowhere left to install itself to.
@@ -148,13 +166,6 @@ def build_ui(app):
         help_menu.add_command(label="Uninstall QiGor…", command=app._uninstall)
     help_menu.add_separator()
     help_menu.add_command(label="About   F1", command=app._show_about)
-
-    menu_strip = tk.Frame(root)
-    menu_strip.pack(side=tk.TOP, fill=tk.X)
-    for label, menu in (("File", file_menu), ("Help", help_menu)):
-        mbtn = tk.Menubutton(menu_strip, text=label, menu=menu, font=menu_font,
-                             padx=10, pady=3, relief=tk.FLAT)
-        mbtn.pack(side=tk.LEFT)
 
     # Kept so a theme toggle can repaint the drop-downs; Tk gives no way to
     # enumerate the menus belonging to a window.
