@@ -637,6 +637,48 @@ def build_ui(app):
     app._url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
     Tooltip(browse_btn, "Open a file browser to pick an image from disk.")
 
+    # ── Image store ───────────────────────────────────────────────────────────
+    # What is already saved locally, between the selector and the history of
+    # what has been applied. The toolbar button of the same name opens this
+    # same folder in Explorer; this is the same thing without leaving the app.
+    store_frame = tk.LabelFrame(right, text="  Image store  ")
+    store_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+
+    store_hdr = tk.Frame(store_frame)
+    store_hdr.pack(fill=tk.X, padx=4, pady=(4, 0))
+    tk.Label(store_hdr, text="Saved images (click to select):",
+             font=scaling.font("Segoe UI", 9)).pack(side=tk.LEFT)
+
+    c = BTN_COLORS["primary"]
+    refresh_store_btn = tk.Button(store_hdr, text="⟳ Refresh",
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              font=scaling.font("Segoe UI", 8),
+              command=app._refresh_store_list)
+    refresh_store_btn.pack(side=tk.RIGHT, padx=4)
+    Tooltip(refresh_store_btn,
+            "Re-read the store folder.\n"
+            "The list also refreshes itself whenever this app saves an image.")
+
+    store_list_frame = tk.Frame(store_frame)
+    store_list_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+    store_scroll = tk.Scrollbar(store_list_frame)
+    store_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+    # height=3, as with History: a floor, not a size -- it expands to fill
+    # whatever the column has spare.
+    app._store_listbox = tk.Listbox(store_list_frame, height=3,
+                                     font=scaling.font("Consolas", 9),
+                                     yscrollcommand=store_scroll.set,
+                                     selectmode=tk.SINGLE)
+    app._store_listbox.pack(fill=tk.BOTH, expand=True)
+    store_scroll.config(command=app._store_listbox.yview)
+    app._store_listbox.bind("<<ListboxSelect>>", app._on_store_select)
+    app._store_listbox.bind("<Double-Button-1>", lambda _: app._start_task())
+    Tooltip(app._store_listbox,
+            "Images saved in your local store.\n"
+            "• Click to load one into the field above and preview it\n"
+            "• Double-click to apply it as the wallpaper\n"
+            "Newest first.")
+
     # ── History list, under the selector it feeds ─────────────────────────────
     hist_frame = tk.LabelFrame(right, text="  History  ")
     hist_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 4))

@@ -88,6 +88,7 @@ class App:
         self._start_clock()
         self._seed_default_favorites()
         self._refresh_history_list()
+        self._refresh_store_list()
         self._refresh_favorites_list()
         self._show_last_changed()
         threading.Thread(target=self._check_slideshow_runner, daemon=True).start()
@@ -273,6 +274,9 @@ class App:
             elapsed = time.monotonic() - t0
             self.root.after(0, lambda e=elapsed: self._banner_success(label, e))
             self.root.after(0, self._refresh_history_list)
+            # Applying with "Copy image to local store" ticked puts a new file
+            # in the store, so the pane that lists it has to hear about it.
+            self.root.after(0, self._refresh_store_list)
             self.root.after(0, self._show_last_changed)
 
         except InterruptedError:
@@ -494,6 +498,43 @@ class App:
             if hasattr(self, "_resize_after"):
                 self.root.after_cancel(self._resize_after)
             self._resize_after = self.root.after(80, self._reflow_preview)
+
+    # ── Image store ───────────────────────────────────────────────────────────
+
+    def _refresh_store_list(self):
+        """
+        Re-read the store folder, newest first.
+
+        The paths are kept beside the list: the listbox holds bare filenames,
+        which are what you want to read, and are not enough to open a file.
+        """
+        self._store_files = []
+        try:
+            STORE_DIR.mkdir(parents=True, exist_ok=True)
+            files = [p for p in STORE_DIR.iterdir()
+                     if p.is_file() and p.suffix.lower() in wp.IMAGE_EXTS]
+            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            self._store_files = files
+        except OSError as exc:
+            self._log(f"Could not read the image store: {exc}", "red")
+        self._store_listbox.delete(0, tk.END)
+        for path in self._store_files:
+            self._store_listbox.insert(tk.END, path.name)
+        if not self._store_files:
+            # An empty box looks like a failure to load; say which it is.
+            self._store_listbox.insert(tk.END, "(no images saved yet)")
+
+    def _on_store_select(self, _=None):
+        sel = self._store_listbox.curselection()
+        if not sel or not self._store_files:
+            return
+        idx = sel[0]
+        if idx >= len(self._store_files):    # the placeholder line
+            return
+        path = self._store_files[idx]
+        self._pending_path.set(str(path))
+        self._drop_label.config(text=f"📎  {path.name}")
+        self._load_preview()
 
     # ── History ───────────────────────────────────────────────────────────────
 
