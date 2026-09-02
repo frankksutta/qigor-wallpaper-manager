@@ -75,6 +75,9 @@ class App:
         self._preview_img   = None
         self._preview_raw   = None
         self._dnd_available = False
+        # The pane builders append to this while wiring drag-and-drop, so it
+        # has to exist before _build_ui runs.
+        self._dnd_msgs: list = []
 
         STORE_DIR.mkdir(parents=True, exist_ok=True)
         HELPERS_DIR.mkdir(parents=True, exist_ok=True)
@@ -297,15 +300,24 @@ class App:
 
     # ── Browse / file ops ─────────────────────────────────────────────────────
 
+    def active_panes(self):
+        """
+        The pane set of whichever tab is in front.
+
+        The menu, the shortcuts and the clipboard should act on the tab you
+        are looking at, not always on the Wallpaper one.
+        """
+        ls = getattr(self, "_ls_panes", None)
+        try:
+            if ls is not None and self._notebook.nametowidget(
+                    self._notebook.select()) is self._lock_tab:
+                return ls
+        except (tk.TclError, AttributeError):
+            pass
+        return self._wp_panes
+
     def _browse_image(self):
-        path = self._open_image_picker(
-            title="Select wallpaper image",
-            initial_dir=self.cfg.get("last_source_dir") or str(Path.home()))
-        if path:
-            self.cfg.set("last_source_dir", str(Path(path).parent))
-            self._pending_path.set(path)
-            self._drop_label.config(text=f"📎  {Path(path).name}")
-            self._load_preview()
+        self.active_panes().browse()
 
     def _open_image_picker(self, title="Select image", initial_dir=None):
         return filedialog.askopenfilename(
@@ -328,9 +340,7 @@ class App:
             self._log("No wallpaper is currently set.", "dim")
             return
         self._log(f"Current wallpaper: {path}", "cyan")
-        self._pending_path.set(path)
-        self._drop_label.config(text=f"🖥  {Path(path).name}")
-        self._load_preview()
+        self._wp_panes.select(path, icon="🖥")
 
     # ── DnD ───────────────────────────────────────────────────────────────────
 
@@ -343,63 +353,27 @@ class App:
         sg.place(relx=1.0, rely=1.0, anchor="se")
         sg.lift()
 
+    # Drag-and-drop, the clipboard and the URL field all live on the pane
+    # sets now (app/imagepanes.py), so both tabs get them from one place.
+    # These remain as the names the shortcuts and menus already call.
+
     def _on_drop_enter(self, event):
-        t = THEMES.get(self.theme_name, THEMES["dark"])
-        self._drop_label.config(bg=CONSOLE_COLORS[self.theme_name]["cyan"],
-                                fg="#000000")
+        self.active_panes().on_drop_enter(event)
 
     def _on_drop_leave(self, event):
-        t = THEMES.get(self.theme_name, THEMES["dark"])
-        self._drop_label.config(bg=t["bg"], fg=t["fg"])
+        self.active_panes().on_drop_leave(event)
 
     def _on_drop(self, event):
-        t = THEMES.get(self.theme_name, THEMES["dark"])
-        self._drop_label.config(bg=t["bg"], fg=t["fg"])
-        raw = event.data.strip()
-        self._log(f"Drop received: {raw[:120]}", "dim")
-        resolved, warning = dnd_mod.resolve_drop_data(raw)
-        if warning:
-            self._log(f"⚠  {warning}", "yellow")
-            self._drop_label.config(
-                text="⚠  Got a page URL, not an image URL.\n"
-                     "Right-click the image → Copy image address\n"
-                     "then paste it in the URL box below.")
-            return
-        if resolved:
-            self._pending_path.set(resolved)
-            name = Path(resolved).name if not resolved.startswith("http") \
-                   else resolved.split("?")[0].split("/")[-1] or resolved[:50]
-            self._drop_label.config(text=f"📎  {name}")
-            self._log(f"Resolved: {resolved}", "cyan")
-            self._load_preview()
-        else:
-            self._log(f"⚠  Could not resolve dropped data: {raw[:120]}", "yellow")
-            self._drop_label.config(
-                text="⚠  Could not read dropped item.\n"
-                     "Try: right-click image → Copy image address\n"
-                     "then paste in the URL box below.")
+        self.active_panes().on_drop(event)
 
     def _on_paste(self, event=None):
-        try:
-            text = self.root.clipboard_get().strip()
-            if text:
-                self._pending_path.set(text)
-                self._drop_label.config(text=f"📎  {text[:60]}")
-                self._load_preview()
-        except Exception:
-            pass
+        self.active_panes().on_paste(event)
 
     def _on_path_changed(self, *_):
-        if hasattr(self, "_path_after"):
-            self.root.after_cancel(self._path_after)
-        self._path_after = self.root.after(700, self._auto_preview_from_entry)
+        self._wp_panes.on_path_changed()
 
     def _auto_preview_from_entry(self):
-        src = self._pending_path.get().strip()
-        if src and len(src) > 5:
-            name = src.split("/")[-1].split("\\")[-1] or src[:40]
-            self._drop_label.config(text=f"📎  {name[:60]}")
-            self._load_preview()
+        self._wp_panes.auto_preview_from_entry()
 
     def _on_drop_on_add_btn(self, event):
         raw = event.data.strip()
@@ -438,103 +412,25 @@ class App:
     # ── Preview ───────────────────────────────────────────────────────────────
 
     def _load_preview(self):
-        if not PIL_AVAILABLE:
-            self._preview_label.config(
-                text="Pillow not installed.\npip install pillow", image="")
-            return
-        src = wp.normalize_src(self._pending_path.get().strip())
-        if not src:
-            return
-        self._preview_label.config(text="Loading…", image="")
-        threading.Thread(target=self._fetch_preview, args=(src,), daemon=True).start()
-
-    def _fetch_preview(self, src):
-        try:
-            img = pv.fetch_preview_image(src)
-            self._preview_raw = img
-            self.root.after(0, self._reflow_preview)
-        except Exception as exc:
-            self._preview_raw = None
-            self.root.after(0, lambda: self._preview_info_var.set(""))
-            self.root.after(0, lambda: self._preview_label.config(
-                image="", text=f"Preview failed:\n{exc}"))
+        self._wp_panes.load_preview()
 
     def _reflow_preview(self, target_label=None):
-        img = getattr(self, "_preview_raw", None)
-        if img is None:
-            return
-        lbl = target_label or self._preview_label
-        pw = lbl.winfo_width()
-        ph = lbl.winfo_height()
-        if pw < 10 or ph < 10:
-            self.root.after(100, lambda: self._reflow_preview(target_label))
-            return
-        sw, sh = pv.get_physical_screen_size(self.root)
-        img_w, img_h = img.size
-        style = self._style_var.get()
-        screen_ratio = sw / sh
-        if pw / ph > screen_ratio:
-            canvas_h = ph - 4
-            canvas_w = int(canvas_h * screen_ratio)
-        else:
-            canvas_w = pw - 4
-            canvas_h = int(canvas_w / screen_ratio)
-        canvas_w = max(canvas_w, 4)
-        canvas_h = max(canvas_h, 4)
-        canvas = pv.composite_preview(img, style, canvas_w, canvas_h, sw, sh)
-        photo = ImageTk.PhotoImage(canvas)
-        self._preview_img = photo
-        lbl.config(image=photo, text="")
-        img_mp = (img_w * img_h) / 1_000_000
-        scr_mp = (sw * sh) / 1_000_000
-        quality = pv.build_quality_label(img_w, img_h, sw, sh, style)
-        info = (f"image: {img_w}×{img_h} ({img_mp:.1f}MP)  •  "
-                f"screen: {sw}×{sh} ({scr_mp:.1f}MP)  •  "
-                f"{style}  •  {quality}")
-        self._preview_info_var.set(info)
+        self._wp_panes.reflow_preview()
 
     def _on_preview_resize(self, event):
-        if getattr(self, "_preview_raw", None) is not None:
-            if hasattr(self, "_resize_after"):
-                self.root.after_cancel(self._resize_after)
-            self._resize_after = self.root.after(80, self._reflow_preview)
+        self._wp_panes.on_preview_resize(event)
 
     # ── Image store ───────────────────────────────────────────────────────────
 
     def _refresh_store_list(self):
-        """
-        Re-read the store folder, newest first.
-
-        The paths are kept beside the list: the listbox holds bare filenames,
-        which are what you want to read, and are not enough to open a file.
-        """
-        self._store_files = []
-        try:
-            STORE_DIR.mkdir(parents=True, exist_ok=True)
-            files = [p for p in STORE_DIR.iterdir()
-                     if p.is_file() and p.suffix.lower() in wp.IMAGE_EXTS]
-            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            self._store_files = files
-        except OSError as exc:
-            self._log(f"Could not read the image store: {exc}", "red")
-        self._store_listbox.delete(0, tk.END)
-        for path in self._store_files:
-            self._store_listbox.insert(tk.END, path.name)
-        if not self._store_files:
-            # An empty box looks like a failure to load; say which it is.
-            self._store_listbox.insert(tk.END, "(no images saved yet)")
+        """Re-read the store for every tab that lists it."""
+        for attr in ("_wp_panes", "_ls_panes"):
+            panes = getattr(self, attr, None)
+            if panes is not None:
+                panes.refresh_store()
 
     def _on_store_select(self, _=None):
-        sel = self._store_listbox.curselection()
-        if not sel or not self._store_files:
-            return
-        idx = sel[0]
-        if idx >= len(self._store_files):    # the placeholder line
-            return
-        path = self._store_files[idx]
-        self._pending_path.set(str(path))
-        self._drop_label.config(text=f"📎  {path.name}")
-        self._load_preview()
+        self._wp_panes.on_store_select()
 
     # ── History ───────────────────────────────────────────────────────────────
 
@@ -755,7 +651,10 @@ class App:
     # ── Lock screen ───────────────────────────────────────────────────────────
 
     def _set_lock_screen(self):
-        src = wp.normalize_src(self._pending_path.get().strip())
+        # The Lock Screen tab has its own selection now; it used to be able to
+        # apply only whatever the Wallpaper tab happened to be holding.
+        panes = self._ls_panes
+        src = wp.normalize_src(panes.pending.get().strip())
         if not src:
             self._log("⚠  No image selected. Drop or paste an image first.", "yellow")
             return
@@ -773,8 +672,7 @@ class App:
                     self._log(f"Saved to store: {dest.name}", "magenta")
                     local_path = dest
                 src = str(local_path)
-                self._pending_path.set(src)
-                self._drop_label.config(text=f"📎  {local_path.name}")
+                panes.select(src, label=local_path.name)
             except Exception as e:
                 self._log(f"✖  Download failed: {e}", "red")
                 return
@@ -936,16 +834,18 @@ class App:
 
     def _show_lock_preview(self):
         """
-        Load the current lock screen into the Lock tab's own preview.
+        Load the image Windows is using now into the Lock tab.
 
-        Deliberately not the wallpaper preview: that one composites the image
-        onto a mock desktop at the chosen wallpaper style, which says nothing
-        useful about a lock screen. This shows the image as it is.
+        It becomes that tab's selection, the way "Current Wallpaper" does on
+        the Wallpaper tab -- so you can look at it, and re-apply it, without
+        hunting for the file. The preview composites it at Fill, which is how
+        Windows shows a lock screen.
         """
         path_str, source = wp.find_current_lock_screen_image()
+        panes = self._ls_panes
         if not path_str:
-            self._lock_info_var.set("")
-            self._lock_preview_label.config(
+            panes.preview_info_var.set("")
+            panes.preview_label.config(
                 image="", text="No lock screen image found.\n"
                                "Windows may be using a solid colour, "
                                "or access is restricted.")
@@ -953,44 +853,7 @@ class App:
             return
         self._log(f"Current lock screen: {Path(path_str).name}", "cyan")
         self._log(f"  Source: {source}", "dim")
-        if not PIL_AVAILABLE:
-            self._lock_preview_label.config(
-                image="", text="Preview needs Pillow:  pip install pillow")
-            return
-        try:
-            self._lock_preview_raw = Image.open(path_str).convert("RGB")
-        except Exception as e:
-            self._lock_preview_label.config(
-                image="", text=f"Could not open the image:\n{e}")
-            self._log(f"⚠  Could not open lock screen image: {e}", "yellow")
-            return
-        self._lock_info_var.set("{}  •  {}×{}  •  {}".format(
-            Path(path_str).name, self._lock_preview_raw.width,
-            self._lock_preview_raw.height, source))
-        self._reflow_lock_preview()
-
-    def _reflow_lock_preview(self):
-        """Fit the lock screen image to the pane, keeping its aspect ratio."""
-        img = getattr(self, "_lock_preview_raw", None)
-        if img is None:
-            return
-        lbl = self._lock_preview_label
-        pw, ph = lbl.winfo_width() - 8, lbl.winfo_height() - 8
-        if pw < 20 or ph < 20:
-            self.root.after(100, self._reflow_lock_preview)
-            return
-        scale = min(pw / img.width, ph / img.height)
-        size = (max(1, int(img.width * scale)), max(1, int(img.height * scale)))
-        photo = ImageTk.PhotoImage(img.resize(size, Image.LANCZOS))
-        self._lock_preview_img = photo      # a dropped reference blanks the label
-        lbl.config(image=photo, text="")
-
-    def _on_lock_preview_resize(self, _event):
-        if getattr(self, "_lock_preview_raw", None) is None:
-            return
-        if hasattr(self, "_lock_resize_after"):
-            self.root.after_cancel(self._lock_resize_after)
-        self._lock_resize_after = self.root.after(80, self._reflow_lock_preview)
+        panes.select(path_str, icon="🔒")
 
     # ── Windows Sources menu ──────────────────────────────────────────────────
 
