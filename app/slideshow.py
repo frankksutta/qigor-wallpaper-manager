@@ -68,12 +68,31 @@ def save_state(state: dict):
     STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def get_images_in_folder(folder: Path) -> list:
+def get_images_in_folder(folder: Path, recursive: bool = False) -> list:
+    """
+    The images in `folder`, sorted — names, or paths relative to it when
+    recursive.
+
+    os.walk rather than rglob: it does not follow directory junctions, and a
+    wallpaper folder is one stray link away from a walk that never ends.
+    """
     try:
-        return sorted(
-            f.name for f in folder.iterdir()
-            if f.is_file() and f.suffix.lower() in IMAGE_EXTS
-        )
+        if not recursive:
+            return sorted(
+                f.name for f in folder.iterdir()
+                if f.is_file() and f.suffix.lower() in IMAGE_EXTS
+            )
+        import os
+        found = []
+        for root, dirs, files in os.walk(folder):
+            # Nobody keeps wallpapers in .git or .thumbnails, and everybody
+            # has them.
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            rel = Path(root).relative_to(folder)
+            for name in files:
+                if Path(name).suffix.lower() in IMAGE_EXTS:
+                    found.append(name if str(rel) == "." else str(rel / name))
+        return sorted(found)
     except Exception:
         return []
 
@@ -138,14 +157,18 @@ def resolve_pool(state: dict) -> list:
     if state.get("source") == "playlist":
         return playlists.existing_items(state.get("playlist") or "")
     folder = Path(state.get("folder", ""))
-    return [str(folder / name) for name in get_images_in_folder(folder)]
+    return [str(folder / name)
+            for name in get_images_in_folder(folder,
+                                             state.get("recursive", False))]
 
 
 def describe_pool(state: dict) -> str:
     """How to name this slideshow's source in a message."""
     if state.get("source") == "playlist":
         return "playlist “{}”".format(state.get("playlist") or "?")
-    return "folder:\n{}".format(state.get("folder", "?"))
+    return "folder{}:\n{}".format(
+        " and its subfolders" if state.get("recursive") else "",
+        state.get("folder", "?"))
 
 
 def advance(state: dict, *, force: bool = False, persist: bool = True,
@@ -596,6 +619,9 @@ class SlideshowPanel(tk.Frame):
         self._preview_n       = 0
         self._preview_left    = 0
         self._preview_last    = ""
+        # Counting the pool can walk a whole tree now, so it runs off the main
+        # thread; the generation number drops results the user has typed past.
+        self._count_gen       = 0
         # Reports whether a task is registered, from the background query the
         # panel already runs. Without it the app asked schtasks a second time
         # on the main thread just to put a tick on the tab.
@@ -616,6 +642,7 @@ class SlideshowPanel(tk.Frame):
         saved_style    = state.get("style",
                                    cfg.get("wallpaper_style") or "Fill")
         saved_source   = state.get("source",   "folder")
+        saved_recurse  = state.get("recursive", False)
         saved_playlist = state.get("playlist", "")
         saved_psecs    = str(cfg.get("slideshow_preview_secs") or 10)
         saved_restore  = bool(cfg.get("slideshow_preview_restore"))
@@ -772,7 +799,18 @@ class SlideshowPanel(tk.Frame):
         self._browse_btn = tk.Button(fr, text="Browse…", font=fns,
                   bg=c["bg"], fg=c["fg"], activebackground=c["active"],
                   command=self._browse_folder)
-        self._browse_btn.pack(side=tk.LEFT)
+        self._browse_btn.pack(side=tk.LEFT, padx=(0, 4))
+        c = BTN_COLORS["warning"]
+        self._store_btn = tk.Button(fr, text="Default store", font=fns,
+                  bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+                  command=self._use_default_store)
+        self._store_btn.pack(side=tk.LEFT)
+        Tooltip(self._store_btn,
+                "Back to the folder QiGor saves images to:\n"
+                "{}\n\n"
+                "This is where “Copy to image store” puts them, and what the "
+                "Image store\npanes list — one press to return after browsing "
+                "somewhere else.".format(STORE_DIR))
 
         # Filled in by the _on_source_change() at the foot of __init__: the
         # count now depends on the source picker above and on the controls
@@ -807,15 +845,36 @@ class SlideshowPanel(tk.Frame):
                      values=list(WALLPAPER_STYLES.keys()), width=10,
                      state="readonly", font=fn).pack(side=tk.LEFT, padx=4)
 
-        # Shuffle
+        # Shuffle, and how deep a folder goes
+        cbs = tk.Frame(body, bg=t["bg"])
+        cbs.pack(fill=tk.X, pady=(0, 8))
         self._shuffle_var = tk.BooleanVar(value=saved_shuffle)
-        tk.Checkbutton(
-            body,
+        shuffle_cb = tk.Checkbutton(
+            cbs,
             text="Shuffle (randomise order, cycle all before repeating)",
             variable=self._shuffle_var,
             font=fn, bg=t["bg"], fg=t["fg"],
             selectcolor=t["entry_bg"],
-            activebackground=t["bg"]).pack(anchor=tk.W, pady=(0, 8))
+            activebackground=t["bg"])
+        shuffle_cb.pack(side=tk.LEFT)
+        Tooltip(shuffle_cb,
+                "Play in random order, showing every image once\n"
+                "before any of them comes round again.")
+
+        self._recursive_var = tk.BooleanVar(value=saved_recurse)
+        self._recursive_cb = tk.Checkbutton(
+            cbs, text="Include subfolders",
+            variable=self._recursive_var,
+            command=self._update_count,
+            font=fn, bg=t["bg"], fg=t["fg"],
+            selectcolor=t["entry_bg"],
+            activebackground=t["bg"])
+        self._recursive_cb.pack(side=tk.LEFT, padx=(12, 0))
+        Tooltip(self._recursive_cb,
+                "Take the images in the folder's subfolders too,\n"
+                "however deep they go.\n\n"
+                "Only applies to a folder — a playlist is a list of\n"
+                "images, wherever each of them happens to live.")
 
         mark_role(tk.Label(body, font=fns, bg=t["bg"], fg=dim, wraplength=460,
                  justify=tk.LEFT,
@@ -972,7 +1031,8 @@ class SlideshowPanel(tk.Frame):
     def _on_source_change(self):
         """Grey out whichever source is not in use, and recount."""
         by_playlist = self._source_var.get() == "playlist"
-        for w in (self._folder_entry, self._browse_btn):
+        for w in (self._folder_entry, self._browse_btn, self._store_btn,
+                  self._recursive_cb):
             w.config(state="disabled" if by_playlist else "normal")
         self._playlist_combo.config(
             state="readonly" if by_playlist else "disabled")
@@ -985,6 +1045,7 @@ class SlideshowPanel(tk.Frame):
             "folder":       str(Path(folder)) if folder else "",
             "source":       self._source_var.get(),
             "playlist":     self._playlist_var.get(),
+            "recursive":    self._recursive_var.get(),
             "interval_min": self._get_interval_min(),
             "shuffle":      self._shuffle_var.get(),
             "style":        self._style_var.get(),
@@ -1013,6 +1074,10 @@ class SlideshowPanel(tk.Frame):
             return False
         return True
 
+    def _use_default_store(self):
+        """Point the folder back at the store this app saves into."""
+        self._folder_var.set(str(STORE_DIR))
+
     def _browse_folder(self):
         d = filedialog.askdirectory(title="Select slideshow folder",
                                     initialdir=self._folder_var.get())
@@ -1020,18 +1085,43 @@ class SlideshowPanel(tk.Frame):
             self._folder_var.set(d)
 
     def _update_count(self):
+        """
+        Say how big the pool is — from a thread, since "Include subfolders"
+        can send it walking a whole tree, and this runs on every keystroke in
+        the folder box.
+        """
         ui = self._state_from_ui()
         if ui["source"] == "playlist" and not ui["playlist"]:
             self._count_var.set(
                 "⚠  No playlist yet — build one on the Playlists tab.")
             return
-        n = len(resolve_pool(ui))
-        where = ("playlist “{}”".format(ui["playlist"])
-                 if ui["source"] == "playlist" else "this folder")
-        self._count_var.set(
-            "⚠  No images found in {}.".format(where) if n == 0
-            else "✔  {} image{} in {}.".format(
-                n, "s" if n != 1 else "", where))
+        if ui["source"] == "playlist":
+            where = "playlist “{}”".format(ui["playlist"])
+        elif ui["recursive"]:
+            where = "this folder and its subfolders"
+        else:
+            where = "this folder"
+
+        self._count_gen += 1
+        gen = self._count_gen
+
+        def _work():
+            n = len(resolve_pool(ui))
+
+            def _apply():
+                # The folder box may have moved on while this was counting.
+                if gen != self._count_gen:
+                    return
+                self._count_var.set(
+                    "⚠  No images found in {}.".format(where) if n == 0
+                    else "✔  {} image{} in {}.".format(
+                        n, "s" if n != 1 else "", where))
+            try:
+                self.after(0, _apply)
+            except (tk.TclError, RuntimeError):
+                pass
+
+        threading.Thread(target=_work, daemon=True).start()
 
     def _get_interval_min(self) -> int:
         label = self._interval_var.get()
@@ -1042,7 +1132,8 @@ class SlideshowPanel(tk.Frame):
         state = load_state()
         # A different pool means the shuffled queue describes images that are
         # no longer being shown; it has to be rebuilt rather than resumed.
-        if any(state.get(k) != ui[k] for k in ("folder", "source", "playlist")):
+        if any(state.get(k) != ui[k]
+               for k in ("folder", "source", "playlist", "recursive")):
             state["queue"]       = []
             state["queue_index"] = 0
         state.update(ui)
