@@ -4,7 +4,7 @@
      %USERPROFILE%\.claude-teamN\projects\<slug>\memory . OneDrive syncs them between
      machines. NEVER delete/recurse the junction path -- that destroys the real store.
      Set up 2026-08-14; full recipe is in the debabel store: shared-memory-across-accounts.md -->
-- [GUI overhaul untested](gui-overhaul-untested-handoff.md) — zoom/tabs/theming committed but never clicked, and source APP_BUILD collides with the published 0.8.2.
+- [GUI overhaul verified](gui-overhaul-untested-handoff.md) — every tab driven button-by-button at 0.8.3; how to script a modal Tk GUI without deadlocking.
 - [Installer release state](installer-release-state.md) — v0.8.2 published; version.json must ship with every release or updates never fire.
 - [Portable over signing](portable-distribution-decision.md) — why QiGor ships embeddable Python + plain source instead of a signed exe, an obfuscated build, or a C++ stub.
 - [Smart App Control constraint](smart-app-control-constraint.md) — SAC enforces on this machine and blocks unsigned builds unpredictably, per file hash.
