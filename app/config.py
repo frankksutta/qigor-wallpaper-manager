@@ -34,6 +34,9 @@ class Config:
         "reminder_hour":    "09",
         "reminder_min":     "00",
         "seeded_favorites": False,
+        "update_check_enabled": True,
+        "update_last_check":    "",    # ISO timestamp of the last successful poll
+        "update_skip_build":    "",    # a build the user chose not to be nagged about
     }
 
     def __init__(self):

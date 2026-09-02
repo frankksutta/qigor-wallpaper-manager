@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 81d39a3a-eefb-404c-a939-36d2369a642c
-  modified: 2026-08-02T10:46:21.513Z
+  modified: 2026-09-01T19:23:26.870Z
 ---
 
 Decided 2026-08-01: distribute via a portable zip (official embeddable CPython +
@@ -33,7 +33,21 @@ that unsigned Pillow `.pyd` files import fine under enforcing SAC. So a
 PSF-signed `pythonw.exe` plus unsigned third-party wheels is deterministically
 allowed, with no cloud reputation verdict in the loop.
 
+**Why not a C++ launcher stub.** Raised and rejected 2026-09-01. A compiled stub
+does not dodge Smart App Control — it *is* a PE image, which is precisely what
+gets gated. Language is irrelevant; only the signature and the ISG reputation
+verdict matter, and a newly compiled unsigned binary has neither, so it lands in
+exactly the same place as the PyInstaller EXE. It is also worse than what it
+replaces: a small unsigned binary that downloads a payload and executes it is
+the textbook downloader-trojan shape, the most heavily penalised pattern in both
+ISG reputation and AV heuristics. The rule that came out of it and now governs
+the build: **ship zero unsigned PE images**, and let signed interpreters
+(`pythonw.exe`) and signed shells (`cmd.exe` running plain `.cmd`) do all the
+executing. PowerShell is avoided for the same reason it looks tempting — under
+Smart App Control it drops to Constrained Language Mode, which breaks
+`New-Object -ComObject`, so shortcuts go through `IShellLinkW` via `ctypes`.
+
 Licensing, not obfuscation, is the actual lever here — see
 [[repo-public-license-pending]]. Implementation state in
-[[portable-build-untested-handoff]]; the mechanism it dodges is in
+[[installer-release-state]]; the mechanism it dodges is in
 [[smart-app-control-constraint]].

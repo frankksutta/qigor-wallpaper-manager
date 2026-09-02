@@ -34,6 +34,13 @@ def build_ui(app):
     file_menu.add_command(label="Exit", command=app._on_close)
     help_menu = tk.Menu(menubar, tearoff=0)
     menubar.add_cascade(label="Help", menu=help_menu)
+    help_menu.add_command(label="Check for Updates…", command=app._check_updates)
+    # Only offered when running from a loose folder — an installed copy has
+    # nowhere left to install itself to.
+    if app._can_install_to_pc():
+        help_menu.add_command(label="Install on this PC…",
+                              command=app._install_to_pc)
+    help_menu.add_separator()
     help_menu.add_command(label="About   F1", command=app._show_about)
 
     root.after(0, app._place_sizegrip)

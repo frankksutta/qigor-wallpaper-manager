@@ -6,6 +6,7 @@ UI construction is in ui.py. Logic modules: wallpaper, preview, dnd, reminder.
 from __future__ import annotations
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -86,6 +87,7 @@ class App:
         self._show_last_changed()
         threading.Thread(target=self._check_slideshow_runner, daemon=True).start()
         self.root.after(0, self._update_ls_btn)
+        self._maybe_check_updates()
 
     # ── UI Construction ───────────────────────────────────────────────────────
     # Full _build_ui is in ui.py and patched in via _build_ui() below.
@@ -1033,6 +1035,54 @@ class App:
 
     def _show_about(self):
         AboutDialog(self.root, self.theme_name, self.font_size)
+
+    # ── Updates and installation ──────────────────────────────────────────────
+
+    def _check_updates(self):
+        try:
+            from .updater import UpdateDialog
+        except Exception as e:
+            messagebox.showerror("Updates unavailable",
+                                 "The updater could not be loaded:\n\n{}".format(e),
+                                 parent=self.root)
+            return
+        UpdateDialog(self).show()
+
+    def _maybe_check_updates(self):
+        """Poll GitHub at most once a day, in the background, never blocking startup."""
+        try:
+            from . import updater
+        except Exception:
+            return
+        if not updater.due_for_check(self.cfg):
+            return
+        threading.Thread(target=updater.background_check, args=(self,),
+                         daemon=True).start()
+
+    def _can_install_to_pc(self) -> bool:
+        """
+        True only for a loose folder that carries its own runtime — a source
+        checkout has nothing to install, and an installed copy is already there.
+        """
+        try:
+            from installer.paths import payload_root, is_installed_copy
+            from installer.core import validate_payload
+        except Exception:
+            return False
+        root = payload_root()
+        return not is_installed_copy(root) and validate_payload(root) is None
+
+    def _install_to_pc(self):
+        """Hand off to the installer window. A separate process, because it
+        builds its own Tk root."""
+        from installer.paths import payload_root
+        root = payload_root()
+        try:
+            subprocess.Popen([sys.executable, str(root / "installer" / "install.py")],
+                             cwd=str(root), close_fds=True)
+        except Exception as e:
+            messagebox.showerror("Could not start the installer", str(e),
+                                 parent=self.root)
 
     # ── Theme ─────────────────────────────────────────────────────────────────
 

@@ -5,10 +5,23 @@ All app-wide constants: name, version, styles, paths, themes, colors.
 from pathlib import Path
 
 APP_NAME    = "QiGor Wallpaper Manager"
-APP_VERSION = "0.7"
-APP_BUILD   = "0.7.4"   # bump this every patch
+APP_VERSION = "0.8"
+APP_BUILD   = "0.8.1"   # bump this every patch
 APP_SLUG    = "qigor-wallpaper"
 RECENT_MAX  = 8
+
+# ── Updates ───────────────────────────────────────────────────────────────────
+# Released through GitHub. The updater talks to the plain
+# releases/latest/download URLs rather than the REST API: those need no token,
+# have no rate limit, and redirect straight to the CDN.
+GITHUB_USER     = "frankksutta"
+GITHUB_REPO     = "qigor-wallpaper-manager"
+RELEASE_PAGE    = "https://github.com/{}/{}/releases/latest".format(
+                      GITHUB_USER, GITHUB_REPO)
+RELEASE_BASE    = RELEASE_PAGE + "/download"
+SETUP_ASSET     = "QiGor_Wallpaper_Manager_Setup.zip"
+MANIFEST_ASSET  = "version.json"
+UPDATE_INTERVAL_HOURS = 24
 
 WALLPAPER_STYLES = {
     "Fill":    ("10", "0"),
