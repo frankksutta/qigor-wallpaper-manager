@@ -66,6 +66,17 @@ Driving the GUI from a script, the things that cost the most time:
   loop that `update()` outside it can never escape. A repeating `root.after`
   watchdog that closes any mapped Toplevel does get to run in there. Skip
   `.popdown` windows — those are combobox lists, not dialogs.
+- **A background thread's `after()` call does nothing without a mainloop.**
+  Every panel here fetches on a thread and marshals back with
+  `self.after(0, ...)`, wrapped in `except (tk.TclError, RuntimeError)`. Drive
+  the app with bare `update()` calls and that raises and is swallowed, so
+  previews stay blank and the tab tick never appears — and it looks exactly
+  like a bug you just introduced. It cost time twice. To test anything that
+  crosses a thread, run a real `root.mainloop()` and assert from `after()`
+  callbacks, then `root.quit()`.
+- Tk refuses `event_generate("<Double-Button-1>")` ("Double, Triple, or
+  Quadruple modifier not allowed"). Check the binding exists and run its
+  script, or call the handler.
 - A log window's master is its panel, not root, so `root.winfo_children()`
   misses it. Walk the whole tree.
 - Screenshots: `PrintWindow` with `PW_RENDERFULLCONTENT`, but
@@ -73,4 +84,4 @@ Driving the GUI from a script, the things that cost the most time:
   holds a 1×1 monochrome bitmap, so passing it gives 1 bpp and an all-black
   capture — and the bitmap must be selected back *out* before `GetDIBits`.
 
-Distribution state in [[installer-release-state]].
+Distribution state in [[installer-release-state]], what is still open in [[qigor-open-work]], why startup is slow in [[tk-startup-cost-emoji]].
