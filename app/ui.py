@@ -113,6 +113,82 @@ def _build_lock_tab(app, parent):
              font=scaling.font("Segoe UI", 8)).pack(fill=tk.X, padx=6, pady=(0, 4))
 
 
+def _build_gallery_tab(app, parent):
+    """
+    Saved folders and gallery URLs, on their own tab.
+
+    This was a panel in the right-hand column, splitting that space with the
+    preview. A tab gives the list room to be a list, and the preview the rest.
+    """
+    fav_frame = tk.Frame(parent)
+    fav_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+
+    fav_hdr = tk.Frame(fav_frame)
+    fav_hdr.pack(fill=tk.X, padx=4, pady=(4, 0))
+    tk.Label(fav_hdr, text="Quick-jump folders & gallery URLs:",
+             font=scaling.font("Segoe UI", 9)).pack(side=tk.LEFT)
+
+    fav_btn_row = tk.Frame(fav_frame)
+    fav_btn_row.pack(fill=tk.X, padx=4, pady=2)
+
+    c = BTN_COLORS["primary"]
+    add_fol_btn = tk.Button(fav_btn_row, text="+ Add Folder",
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              font=scaling.font("Segoe UI", 8), command=app._add_favorite_folder)
+    add_fol_btn.pack(side=tk.LEFT, padx=(0, 4))
+    Tooltip(add_fol_btn,
+            "Add a folder to favorites.\n"
+            "• Click to browse for a folder\n"
+            "• Or drag a folder/file/URL onto this button\n"
+            "Double-click a saved folder later to browse images inside it.")
+    dnd_mod.setup_dnd_on(add_fol_btn, app._on_drop_on_add_btn, app._dnd_available)
+
+    c = BTN_COLORS["warning"]
+    add_url_btn = tk.Button(fav_btn_row, text="+ Add URL",
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              font=scaling.font("Segoe UI", 8), command=app._add_favorite_url)
+    add_url_btn.pack(side=tk.LEFT, padx=(0, 4))
+    Tooltip(add_url_btn,
+            "Add a website URL to favorites.\n"
+            "• Click to enter a label and URL\n"
+            "• Or drag a URL onto this button")
+    dnd_mod.setup_dnd_on(add_url_btn, app._on_drop_on_add_btn, app._dnd_available)
+
+    c = BTN_COLORS["danger"]
+    rem_btn = tk.Button(fav_btn_row, text="Remove",
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              font=scaling.font("Segoe UI", 8), command=app._remove_favorite)
+    rem_btn.pack(side=tk.LEFT, padx=(0, 4))
+    Tooltip(rem_btn, "Remove the selected favorite.\nOr right-click any item in the list.")
+
+    c = BTN_COLORS["primary"]
+    restore_btn = tk.Button(fav_btn_row, text="↺ Restore Defaults",
+              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
+              font=scaling.font("Segoe UI", 8), command=app._restore_default_favorites)
+    restore_btn.pack(side=tk.LEFT)
+    Tooltip(restore_btn,
+            "Re-adds the default lucid24 gallery URLs that may have been deleted.\n"
+            "Safe to click any time — only missing defaults are added back.")
+
+    fav_list_frame = tk.Frame(fav_frame)
+    fav_list_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+    fav_scroll = tk.Scrollbar(fav_list_frame)
+    fav_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+    app._fav_listbox = tk.Listbox(fav_list_frame,
+                                   font=scaling.font("Consolas", 9),
+                                   yscrollcommand=fav_scroll.set,
+                                   selectmode=tk.SINGLE)
+    app._fav_listbox.pack(fill=tk.BOTH, expand=True)
+    fav_scroll.config(command=app._fav_listbox.yview)
+    app._fav_listbox.bind("<Double-Button-1>", app._open_favorite)
+    app._fav_listbox.bind("<Button-3>",        app._on_fav_right_click)
+    Tooltip(app._fav_listbox,
+            "Saved folders and gallery pages.\n"
+            "• Double-click a folder → browse images inside\n"
+            "• Double-click a URL → open in browser\n"
+            "• Right-click any item → Delete / Rename label")
+
+
 def build_ui(app):
     """Build the entire main window UI onto app (App instance)."""
     root = app.root
@@ -274,8 +350,58 @@ def build_ui(app):
     app._h_pane.pack(fill=tk.BOTH, expand=True)
 
     # ─────────────────────────  LEFT COLUMN  ──────────────────────────────────
-    left = tk.Frame(app._h_pane)
-    app._h_pane.add(left, stretch="always", minsize=320)
+    # Scrollable, because pack simply stops handing out space once it runs
+    # short: the widgets at the foot of this column — Set Wallpaper among them
+    # — were dropped silently, with nothing to tell you they were there. That
+    # needed no resizing at all, only A+: at the window's own 800x600 minimum
+    # one press was enough to lose the button. The scrollbar shows up only when
+    # the column genuinely does not fit.
+    left_outer = tk.Frame(app._h_pane)
+    app._h_pane.add(left_outer, stretch="always", minsize=320)
+
+    app._left_canvas = tk.Canvas(left_outer, highlightthickness=0, bd=0)
+    app._left_scroll = tk.Scrollbar(left_outer, orient=tk.VERTICAL,
+                                    command=app._left_canvas.yview)
+    app._left_canvas.configure(yscrollcommand=app._left_scroll.set)
+    app._left_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    left = tk.Frame(app._left_canvas)
+    _left_win = app._left_canvas.create_window((0, 0), window=left, anchor="nw")
+
+    def _fit_left(_event=None):
+        """
+        Keep the column the width of the canvas, and at least its height.
+
+        Matching the canvas height when there is room keeps History expanding
+        the way it always did; going taller when there is not is what makes
+        the rest reachable rather than merely absent.
+        """
+        cv = app._left_canvas
+        cw, ch = cv.winfo_width(), cv.winfo_height()
+        need = left.winfo_reqheight()
+        cv.itemconfigure(_left_win, width=cw, height=max(ch, need))
+        cv.configure(scrollregion=(0, 0, cw, max(ch, need)))
+        # A scrollbar with nothing to scroll is just clutter.
+        if need > ch:
+            if not app._left_scroll.winfo_ismapped():
+                app._left_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        elif app._left_scroll.winfo_ismapped():
+            app._left_scroll.pack_forget()
+            cv.yview_moveto(0)
+
+    app._left_canvas.bind("<Configure>", _fit_left)
+    left.bind("<Configure>", _fit_left)
+
+    def _wheel_left(event):
+        if app._left_scroll.winfo_ismapped():
+            app._left_canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+    # Bound per-widget on enter/leave rather than with bind_all, which would
+    # steal the wheel from the console and the two listboxes.
+    def _wheel_on(_e=None):  app._left_canvas.bind_all("<MouseWheel>", _wheel_left)
+    def _wheel_off(_e=None): app._left_canvas.unbind_all("<MouseWheel>")
+    app._left_canvas.bind("<Enter>", _wheel_on)
+    app._left_canvas.bind("<Leave>", _wheel_off)
 
     # ── Drop zone ─────────────────────────────────────────────────────────────
     drop_frame = tk.LabelFrame(left,
@@ -286,7 +412,9 @@ def build_ui(app):
         text="🖼  Drag a file from Explorer\n"
              "or drag an image from a browser\n"
              "or paste a URL / image address below",
-        height=6, relief=tk.RIDGE, cursor="hand2",
+        # 3 lines of text in a 5-line box: still a generous drop target, but
+        # the column now fits the default window without a scrollbar.
+        height=5, relief=tk.RIDGE, cursor="hand2",
         font=scaling.font("Segoe UI", 10))
     app._drop_label.pack(fill=tk.X, padx=6, pady=(6, 4))
     app._drop_label.bind("<Button-1>", lambda _: app._browse_image())
@@ -370,12 +498,14 @@ def build_ui(app):
     copy_row = tk.Frame(opts_frame)
     copy_row.pack(fill=tk.X, padx=6, pady=(0, 6))
     cb = tk.Checkbutton(copy_row,
-        text="Copy image to local store (prevents broken wallpaper if original moves)",
+        text="Copy image to local store",
         variable=app._copy_var,
         font=scaling.font("Segoe UI", 9),
         command=lambda: app.cfg.set("copy_to_store", app._copy_var.get()))
     cb.pack(side=tk.LEFT)
     Tooltip(cb,
+            "Prevents a broken wallpaper if the original file is moved,\n"
+            "renamed or deleted.\n\n"
             "When checked: copies the image into the wallpaper store folder.\n"
             f"Store: {STORE_DIR}")
 
@@ -456,7 +586,11 @@ def build_ui(app):
     hist_list_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
     scrollbar = tk.Scrollbar(hist_list_frame)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    app._hist_listbox = tk.Listbox(hist_list_frame,
+    # height=3 is a floor, not a size: it still expands to fill whatever the
+    # column has spare, so at any normal window size this looks unchanged. Tk's
+    # default of 10 lines made the column *ask* for more height than the window
+    # has, which kept the scrollbar up even with room to spare.
+    app._hist_listbox = tk.Listbox(hist_list_frame, height=3,
                                     font=scaling.font("Consolas", 9),
                                     yscrollcommand=scrollbar.set,
                                     selectmode=tk.SINGLE)
@@ -515,74 +649,10 @@ def build_ui(app):
 
 
 
-    # ── Favorites ─────────────────────────────────────────────────────────────
-    fav_frame = tk.LabelFrame(right, text="  Saved Locations & Galleries  ")
-    fav_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
-
-    fav_hdr = tk.Frame(fav_frame)
-    fav_hdr.pack(fill=tk.X, padx=4, pady=(4, 0))
-    tk.Label(fav_hdr, text="Quick-jump folders & gallery URLs:",
-             font=scaling.font("Segoe UI", 9)).pack(side=tk.LEFT)
-
-    fav_btn_row = tk.Frame(fav_frame)
-    fav_btn_row.pack(fill=tk.X, padx=4, pady=2)
-
-    c = BTN_COLORS["primary"]
-    add_fol_btn = tk.Button(fav_btn_row, text="+ Add Folder",
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=scaling.font("Segoe UI", 8), command=app._add_favorite_folder)
-    add_fol_btn.pack(side=tk.LEFT, padx=(0, 4))
-    Tooltip(add_fol_btn,
-            "Add a folder to favorites.\n"
-            "• Click to browse for a folder\n"
-            "• Or drag a folder/file/URL onto this button\n"
-            "Double-click a saved folder later to browse images inside it.")
-    dnd_mod.setup_dnd_on(add_fol_btn, app._on_drop_on_add_btn, app._dnd_available)
-
-    c = BTN_COLORS["warning"]
-    add_url_btn = tk.Button(fav_btn_row, text="+ Add URL",
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=scaling.font("Segoe UI", 8), command=app._add_favorite_url)
-    add_url_btn.pack(side=tk.LEFT, padx=(0, 4))
-    Tooltip(add_url_btn,
-            "Add a website URL to favorites.\n"
-            "• Click to enter a label and URL\n"
-            "• Or drag a URL onto this button")
-    dnd_mod.setup_dnd_on(add_url_btn, app._on_drop_on_add_btn, app._dnd_available)
-
-    c = BTN_COLORS["danger"]
-    rem_btn = tk.Button(fav_btn_row, text="Remove",
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=scaling.font("Segoe UI", 8), command=app._remove_favorite)
-    rem_btn.pack(side=tk.LEFT, padx=(0, 4))
-    Tooltip(rem_btn, "Remove the selected favorite.\nOr right-click any item in the list.")
-
-    c = BTN_COLORS["primary"]
-    restore_btn = tk.Button(fav_btn_row, text="↺ Restore Defaults",
-              bg=c["bg"], fg=c["fg"], activebackground=c["active"],
-              font=scaling.font("Segoe UI", 8), command=app._restore_default_favorites)
-    restore_btn.pack(side=tk.LEFT)
-    Tooltip(restore_btn,
-            "Re-adds the default lucid24 gallery URLs that may have been deleted.\n"
-            "Safe to click any time — only missing defaults are added back.")
-
-    fav_list_frame = tk.Frame(fav_frame)
-    fav_list_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
-    fav_scroll = tk.Scrollbar(fav_list_frame)
-    fav_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-    app._fav_listbox = tk.Listbox(fav_list_frame,
-                                   font=scaling.font("Consolas", 9),
-                                   yscrollcommand=fav_scroll.set,
-                                   selectmode=tk.SINGLE)
-    app._fav_listbox.pack(fill=tk.BOTH, expand=True)
-    fav_scroll.config(command=app._fav_listbox.yview)
-    app._fav_listbox.bind("<Double-Button-1>", app._open_favorite)
-    app._fav_listbox.bind("<Button-3>",        app._on_fav_right_click)
-    Tooltip(app._fav_listbox,
-            "Saved folders and gallery pages.\n"
-            "• Double-click a folder → browse images inside\n"
-            "• Double-click a URL → open in browser\n"
-            "• Right-click any item → Delete / Rename label")
+    # ── Gallery URLs tab ──────────────────────────────────────────────────────
+    gallery_tab = tk.Frame(app._notebook)
+    app._notebook.add(gallery_tab, text="  🌐  Gallery URLs  ")
+    _build_gallery_tab(app, gallery_tab)
 
     # ── Lock Screen tab ───────────────────────────────────────────────────────
     lock_tab = tk.Frame(app._notebook)

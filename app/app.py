@@ -1363,6 +1363,12 @@ class App:
                 widget.configure(bg=t["bg"], fg=t["fg"],
                                  activebackground=t["btn_bg"],
                                  activeforeground=t["fg"])
+            # The scrolling left column rides on a Canvas, which otherwise
+            # keeps SystemButtonFace and shows as a light strip behind the
+            # column on the dark theme. Scrollbars are all ttk now -- a plain
+            # tk one cannot be themed on Windows, which draws it itself.
+            elif wtype == "Canvas":
+                widget.configure(bg=t["bg"])
             elif wtype == "Listbox":
                 widget.configure(bg=t["entry_bg"], fg=t["entry_fg"],
                                  selectbackground="#3a6ea5",
