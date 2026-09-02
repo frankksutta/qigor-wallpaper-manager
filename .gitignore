@@ -64,3 +64,8 @@ qigor_wallpaper_manager_thumb.jpg
 /version.json
 /SHA256.txt
 /QiGor-Setup.cmd
+
+# A separate, private tool that happens to live in this folder. It is its own
+# git repository, so it must be ignored here: without this, `git add -A` files
+# it as a gitlink and commits a broken submodule pointer to a public repo.
+/qigor_wallpaper_sync/
