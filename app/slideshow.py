@@ -491,10 +491,15 @@ class SlideshowPanel(tk.Frame):
     wait_window/result handshake, since nothing waits on a tab.
     """
 
-    def __init__(self, parent, cfg, theme_name, on_result=None):
+    def __init__(self, parent, cfg, theme_name, on_result=None,
+                 on_scheduled=None):
         super().__init__(parent)
         self.result   = None
         self._on_result = on_result
+        # Reports whether a task is registered, from the background query the
+        # panel already runs. Without it the app asked schtasks a second time
+        # on the main thread just to put a tick on the tab.
+        self._on_scheduled = on_scheduled
         self._cfg     = cfg
 
         t = THEMES.get(theme_name, THEMES["dark"])
@@ -704,6 +709,8 @@ class SlideshowPanel(tk.Frame):
                     self._status_var.set(st)
                     paint_role(self._status_label, r, self._theme_name)
                     self._set_running_state(s)
+                    if self._on_scheduled is not None:
+                        self._on_scheduled(s)
                 except tk.TclError:
                     pass
             try:

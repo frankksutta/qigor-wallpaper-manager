@@ -22,8 +22,8 @@ from . import scaling
 from .config import Config
 from .tooltip import Tooltip
 from .dialogs import AboutDialog, _InputDialog, _RenameDialog
-from .slideshow import (is_scheduled as slideshow_is_scheduled,
-                        slideshow_runner_is_stale, slideshow_last_run_failed)
+from .slideshow import (slideshow_runner_is_stale,
+                        slideshow_last_run_failed)
 from .desktop_preview import start_preview
 
 
@@ -83,11 +83,24 @@ class App:
         HELPERS_DIR.mkdir(parents=True, exist_ok=True)
 
         self._build_ui()
-        self._mark_tab(self._slideshow_panel, slideshow_is_scheduled())
+        # The slideshow tick is set by the panel's own background query — see
+        # its on_scheduled. Asking schtasks here as well put a scheduler call
+        # on the main thread before the window had even appeared.
         self._mark_tab(self._reminder_panel, bool(self.cfg.get("reminder_set")))
         self.font_size = scaling.apply(self.cfg.get("font_size"))
         self._apply_theme()
         self._bind_shortcuts()
+
+        # Put the window on screen before anything else. Everything in
+        # _finish_startup reads the disk, the registry, the scheduler or the
+        # network, and none of it is needed to draw the window -- but all of it
+        # used to run first, so the app sat there unresponsive until it was
+        # done.
+        self.root.update_idletasks()
+        self.root.after_idle(self._finish_startup)
+
+    def _finish_startup(self):
+        """Everything that can wait until the window is up."""
         self._start_clock()
         self._seed_default_favorites()
         self._refresh_history_list()
@@ -95,7 +108,7 @@ class App:
         self._refresh_favorites_list()
         self._show_last_changed()
         threading.Thread(target=self._check_slideshow_runner, daemon=True).start()
-        self.root.after(0, self._update_ls_btn)
+        self._update_ls_btn()
         self._maybe_check_updates()
 
     # ── UI Construction ───────────────────────────────────────────────────────
@@ -961,8 +974,10 @@ class App:
         except (tk.TclError, AttributeError):
             return
         if current is getattr(self, "_slideshow_panel", None):
+            # Threaded, and it reports back through on_scheduled to set the
+            # tick. It used to be followed by a synchronous schtasks query,
+            # which is what made this tab pause before it would draw.
             current._refresh_status()
-            self._mark_tab(current, slideshow_is_scheduled())
 
     def _show_reminder_tab(self):
         self._select_tab(self._reminder_panel)

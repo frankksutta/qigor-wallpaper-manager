@@ -51,17 +51,24 @@ def _build_wallpaper_tab(app, parent):
             rb.pack(side=tk.LEFT, padx=6)
             Tooltip(rb, tips.get(s, s))
 
-        copy_row = tk.Frame(opts_frame)
-        copy_row.pack(fill=tk.X, padx=6, pady=(0, 6))
+    def copy_to_store(row):
+        """
+        The option that changes what Set Wallpaper does, beside the button.
+
+        It sat in Display Style, which is about how an image is drawn, not
+        about whether a copy of it is kept.
+        """
         cb = tk.Checkbutton(
-            copy_row, text="Copy image to local store",
-            variable=app._copy_var, font=scaling.font("Segoe UI", 9),
+            row, text="Copy to image store", variable=app._copy_var,
+            font=scaling.font("Segoe UI", 9),
             command=lambda: app.cfg.set("copy_to_store", app._copy_var.get()))
-        cb.pack(side=tk.LEFT)
+        cb.pack(side=tk.LEFT, padx=(8, 0))
         Tooltip(cb,
-                "Prevents a broken wallpaper if the original file is moved,\n"
-                "renamed or deleted.\n\n"
-                "When checked: copies the image into the wallpaper store folder.\n"
+                "Nothing is saved to the image store until you apply it:\n"
+                "press Set Wallpaper here, or Set Lock Screen on that tab,\n"
+                "with an image that is not in the store already.\n\n"
+                "Keeping a copy means the wallpaper survives the original "
+                "being\nmoved, renamed or deleted.\n\n"
                 f"Store: {STORE_DIR}")
 
     def footer(left, panes):
@@ -106,6 +113,7 @@ def _build_wallpaper_tab(app, parent):
                  "tooltip": "Open Windows Settings → Personalization → "
                             "Background.\nSet desktop background to Picture, "
                             "Slideshow, or Spotlight."},
+                {"build": copy_to_store},
             ],
             [
                 {"text": "👁  Show Desktop", "colour": "primary",
@@ -483,8 +491,10 @@ def build_ui(app):
     # Built once and kept. As dialogs these were rebuilt from disk on every
     # open; as tabs they hold their state, and their buttons report back
     # through on_result instead of the old wait_window handshake.
-    app._slideshow_panel = SlideshowPanel(app._notebook, app.cfg, app.theme_name,
-                                          on_result=app._on_slideshow_result)
+    app._slideshow_panel = SlideshowPanel(
+        app._notebook, app.cfg, app.theme_name,
+        on_result=app._on_slideshow_result,
+        on_scheduled=lambda s: app._mark_tab(app._slideshow_panel, s))
     app._notebook.add(app._slideshow_panel, text="  ▶  Slideshow  ")
 
     app._reminder_panel = ReminderPanel(app._notebook, app.cfg, app.theme_name,

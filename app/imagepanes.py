@@ -415,8 +415,17 @@ def _build_preview(app, left, panes):
 
 
 def _buttons(app, row, specs, fill=True):
-    """Build a row of buttons from plain dicts, so a tab only lists them."""
+    """
+    Build a row from plain dicts, so a tab only has to list them.
+
+    An entry carrying "build" is handed the row instead — the copy-to-store
+    checkbox sits in the Set Wallpaper group that way, rather than being a
+    button.
+    """
     for btn in specs:
+        if btn.get("build") is not None:
+            btn["build"](row)
+            continue
         c = BTN_COLORS[btn.get("colour", "primary")]
         widget = tk.Button(
             row, text=btn["text"], height=btn.get("height", 2),
