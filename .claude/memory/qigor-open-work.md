@@ -148,8 +148,37 @@ The main app was audited at the same time and has no Google Drive code at all;
 what it did have was `Path.home()/"AppData/..."` and one `C:/Windows`
 literal, now resolved from the environment (`2f9e164` in the outer repo).
 
-The GUI drive script for that tab (100 checks, real mainloop, every messagebox
-stubbed to a recorder) is in the scratchpad, not the repo - same rule as the
+**The sync tool can now DELETE from archive.org, and that changes how it must
+be tested.** `ia_client.delete_files` (added 2026-09-02, `3a86759`) is the only
+call in the whole project that removes anything from archive.org, and the Move
+tab uses it: a move copies, recycles the original, then deletes the picture
+from the item it left, so the next Pull cannot put it back. **Any test that
+exercises a move must stub `qws.ia.delete_files`** - `configured_status()` is
+TRUE on this machine because the vault is unlocked, so an unstubbed move
+against a pretend item reaches out for real. The library's own `debug=True`
+prepares a delete request and sends nothing, which is how the call shape was
+verified against a real item.
+
+Nothing is deleted from disk either: `recycle.py` moves originals to
+`<drive_root>_recycle_bin`, a SIBLING of the sync root (inside it would be
+uploaded by the next Push), and only what has sat there 30 days can be
+emptied.
+
+The tabs are **Sync / Folders / New Images / Move / Upload setup** - "Items"
+was renamed because the half you keep touching is the folder. Heights at
+frank's font 13: Folders 396, Move 489, New Images 547 (the tallest), console
+414px. Moving the move pane out of the Folders tab is what bought that back;
+a ttk.Notebook is as tall as its tallest tab on every tab, and it had been
+923/two lines.
+
+**Long "?" help texts are `HelpWindow`, never `messagebox.showinfo`** - a
+messagebox draws in the system dialog font, which A+/A- cannot touch, so the
+longest texts in the app stayed at 8pt while everything else zoomed. frank
+raised this; it is the kind of thing to check for whenever a new explanation
+is added.
+
+The GUI drive scripts (104 checks for New Images, 92 for Folders and Move,
+real mainloop, every messagebox stubbed to a recorder) is in the scratchpad, not the repo - same rule as the
 main app's. It subclasses `Config` onto a temp dir so frank's own config and
 his real I:\ pack are never touched; the one check that does touch the real
 pack stubs `ni.discard` to refuse before it can delete anything.
