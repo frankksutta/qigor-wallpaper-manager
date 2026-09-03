@@ -1,6 +1,6 @@
 ---
 name: qigor-open-work
-description: "Where the wallpaper MANAGER stands after 2026-09-03: 18 commits unpushed, 0.8.3 bumped but never built, the new Import picker, and the improvements frank was told about but has not decided on."
+description: "Where the wallpaper MANAGER stands after 2026-09-03: 9 commits unpushed, 0.8.3 bumped but never built, the new Import picker, and the improvements frank was told about but has not decided on."
 metadata: 
   node_type: memory
   type: project
@@ -12,9 +12,9 @@ State at the end of 2026-09-02, when frank shut the machine down mid-stream.
 He said there were "more improvements to work on" — so expect to be picking
 this up, not starting fresh.
 
-**Seven commits are on local `master` and unpushed** (`45488b6` …
-`0a2dc8e`) as of 2026-09-03 - frank pushed everything up to `cdf36ad`
-himself. Frank asks to commit as he goes and has never asked to push; the
+**Nine commits are on local `master` and unpushed** (`9d210b8` …
+`f6a2d5f`) as of 2026-09-03 - frank pushed everything up to `cdf36ad`
+himself, and the Import picker's two commits followed. Frank asks to commit as he goes and has never asked to push; the
 repo is public — offer, don't push unasked. The tree is clean.
 
 **0.8.3 is bumped in `app/constants.py` but has never been built or
@@ -154,7 +154,7 @@ Two things from that work that bear on THIS app:
 config and the real files changing underneath you.
 
 **2026-09-03: the Import picker** (`c4aba8b`, one commit, still 0.8.3 and
-still unbuilt — the release pile is now 18 commits). Frank's ask, in his
+still unbuilt — the release pile is now 9 commits). Frank's ask, in his
 words: Import "just downloads everything, including things you already have".
 It now checks the store first and opens `app/galleryimport.py` — a filtered,
 ticked list with All / None / Invert and a preview of the highlighted row.

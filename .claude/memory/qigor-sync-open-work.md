@@ -1,11 +1,11 @@
 ---
 name: qigor-sync-open-work
-description: "Handoff for the wallpaper SYNC tool after 2026-09-02: five tabs, four commits that day, what is open, and the three hazards to know before touching it."
+description: "Handoff for the wallpaper SYNC tool after 2026-09-03: five restyled tabs, the ttk clam switch they needed, what is open, and the three hazards to know before touching it."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 6bdc9b61-d049-49ba-9611-50846bf90165
-  modified: 2026-09-03T04:13:32.038Z
+  modified: 2026-09-03T04:20:00.000Z
 ---
 
 Handoff written at frank's request at the end of **2026-09-02**: "more
