@@ -1,6 +1,6 @@
 ---
 name: qigor-open-work
-description: "Where the wallpaper MANAGER stands after 2026-09-03: 9 commits unpushed, 0.8.3 bumped but never built, the new Import picker, and the improvements frank was told about but has not decided on."
+description: "Where the wallpaper MANAGER stands after 2026-09-03: 12 commits unpushed, 0.8.4 bumped but never built, the new Import picker, and the improvements frank was told about but has not decided on."
 metadata: 
   node_type: memory
   type: project
@@ -12,13 +12,16 @@ State at the end of 2026-09-02, when frank shut the machine down mid-stream.
 He said there were "more improvements to work on" — so expect to be picking
 this up, not starting fresh.
 
-**Nine commits are on local `master` and unpushed** (`9d210b8` …
-`f6a2d5f`) as of 2026-09-03 - frank pushed everything up to `cdf36ad`
+**Twelve commits are on local `master` and unpushed** (`9d210b8` …
+`578ab05`) as of 2026-09-03 - frank pushed everything up to `cdf36ad`
 himself, and the Import picker's two commits followed. Frank asks to commit as he goes and has never asked to push; the
 repo is public — offer, don't push unasked. The tree is clean.
 
-**0.8.3 is bumped in `app/constants.py` but has never been built or
-uploaded.** Every UI change from this session is source-only: the installed
+**0.8.4 is bumped in `app/constants.py` (frank asked, `578ab05`) and has
+never been built or uploaded, nor was 0.8.3 before it.** `version.json` in the
+repo still describes the 0.8.3 zip that was never released; `build.pyw` reads
+`APP_BUILD` and rewrites that manifest itself, so leave it alone until a
+build runs. Every UI change from this session is source-only: the installed
 copy is still the released 0.8.2 and will not see any of it. A release needs
 📦 Build Installer then 🐙 Upload Release, all four assets — details in
 [[installer-release-state]].
@@ -154,7 +157,7 @@ Two things from that work that bear on THIS app:
 config and the real files changing underneath you.
 
 **2026-09-03: the Import picker** (`c4aba8b`, one commit, still 0.8.3 and
-still unbuilt — the release pile is now 9 commits). Frank's ask, in his
+still unbuilt — the release pile is now 12 commits). Frank's ask, in his
 words: Import "just downloads everything, including things you already have".
 It now checks the store first and opens `app/galleryimport.py` — a filtered,
 ticked list with All / None / Invert and a preview of the highlighted row.
@@ -173,6 +176,23 @@ and post-creation `config(text=…)` draws the arrow correctly. The gallery
 tab's existing Import button uses the same codepoint, so if it is a box on
 screen both need swapping — `↓` captured cleanly everywhere. It was left as
 it is rather than changed on a capture artifact.
+
+**The slideshow's `recursive` default was flipped** (`8e8b285`): subfolders
+count unless the state says otherwise, via `is_recursive()`. Frank hit it as
+"quick preview of root image store says empty even though subdirs are full" —
+his store has no loose files at all now that Import files each gallery in one
+of its own. Unticking the box over a folder with nothing loose in it now says
+how many images are in its subfolders instead of calling the folder empty;
+that was chosen over recursing anyway behind an explicit choice.
+
+**Two things in frank's live data, found while checking and NOT touched:**
+playlist "a" is entirely dead — all ten items name `saved_wallpapers\*.png`
+at the top level and all ten files now live in
+`saved_wallpapers\lucid24.org-wallpaper-desktop-image\` under the same
+names, so every scheduled fire ends in "No images found in playlist". He was
+offered a path repair, and a "relocate moved images" button for the Playlists
+tab, which has no such thing. His scheduled source is that playlist, not the
+folder, so the recursive fix does not reach the scheduled rotation.
 
 Testing this GUI: [[gui-overhaul-untested-handoff]]. Startup cost:
 [[tk-startup-cost-emoji]]. Distribution: [[installer-release-state]].
