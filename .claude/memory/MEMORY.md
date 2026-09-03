@@ -7,6 +7,7 @@
 - [Open work + session state](qigor-open-work.md) — 16 unpushed commits, 0.8.3 never built, what playlists/preview/import added on 2026-09-02, and the sync tool's New Images tab.
 - [Heredocs mangle backslashes](bash-heredoc-mangles-backslashes.md) — patch scripts go in a Write-ed file; a heredoc silently corrupts `\n` and the patch quietly does nothing.
 - [Scheduler's one-minute floor](task-scheduler-minute-floor.md) — schtasks rejects PT5S/PT30S, which is why slideshow preview is a Tk timer.
+- [Drive latency + the emoji font load](drive-listing-costs-half-a-second.md) — the two reasons an app is slow to start: ~0.5s per Drive folder listing, ~0.9s for the first emoji in the process.
 - [Startup cost is emoji](tk-startup-cost-emoji.md) — 716ms for the first emoji glyph in Tk; never query schtasks on the main thread.
 - [GUI overhaul verified](gui-overhaul-untested-handoff.md) — every tab driven button-by-button at 0.8.3; how to script a modal Tk GUI without deadlocking.
 - [Installer release state](installer-release-state.md) — v0.8.2 published; version.json must ship with every release or updates never fire.

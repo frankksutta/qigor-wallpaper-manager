@@ -48,4 +48,11 @@ Measuring on this machine is misleading: `schtasks /query` returns in 0.02s
 here even verbose and even for a task that exists, so frank's multi-second
 pause never reproduced locally. Stub the call slow to prove a fix.
 
+**Removing ONE emoji does not fix this** - the cost is the font load, so
+whichever glyph is rendered first pays it. The sync tool went emoji-free
+entirely on 2026-09-02 and started in 1.4s instead of 5.3s; the numbers, the
+cheap replacement glyphs and the measuring technique are in
+[[drive-listing-costs-half-a-second]]. The same swap has not been offered for
+THIS app yet.
+
 Testing lessons for this GUI are in [[gui-overhaul-untested-handoff]].
