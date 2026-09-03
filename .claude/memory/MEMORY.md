@@ -4,7 +4,8 @@
      %USERPROFILE%\.claude-teamN\projects\<slug>\memory . OneDrive syncs them between
      machines. NEVER delete/recurse the junction path -- that destroys the real store.
      Set up 2026-08-14; full recipe is in the debabel store: shared-memory-across-accounts.md -->
-- [Open work + session state](qigor-open-work.md) — 16 unpushed commits, 0.8.3 never built, what playlists/preview/import added on 2026-09-02, and the sync tool's New Images tab.
+- [Open work: the manager](qigor-open-work.md) — 17 unpushed commits, 0.8.3 never built, and what is still undecided there.
+- [Open work: the sync tool](qigor-sync-open-work.md) — handoff for 2026-09-03: five tabs, the recycle bin, and the three hazards before touching it.
 - [Heredocs mangle backslashes](bash-heredoc-mangles-backslashes.md) — patch scripts go in a Write-ed file; a heredoc silently corrupts `\n` and the patch quietly does nothing.
 - [Scheduler's one-minute floor](task-scheduler-minute-floor.md) — schtasks rejects PT5S/PT30S, which is why slideshow preview is a Tk timer.
 - [Drive latency + the emoji font load](drive-listing-costs-half-a-second.md) — the two reasons an app is slow to start: ~0.5s per Drive folder listing, ~0.9s for the first emoji in the process.

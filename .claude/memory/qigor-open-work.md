@@ -1,6 +1,6 @@
 ---
 name: qigor-open-work
-description: "Where QiGor stands after 2026-09-02: 16 commits unpushed, 0.8.3 bumped but never built, the sync tool's new New Images tab, and the improvements frank was told about but has not decided on."
+description: "Where the wallpaper MANAGER stands after 2026-09-02: 17 commits unpushed, 0.8.3 bumped but never built, and the improvements frank was told about but has not decided on."
 metadata:
   node_type: memory
   type: project
@@ -116,72 +116,29 @@ colour options, and `ttk.Scrollbar` under the `clam` theme came out beige
 coordinates — an earlier reading that said ttk worked was a mis-aimed pixel
 sample. Left alone rather than guessed at.
 
-**2026-09-02, evening: the wallpaper SYNC tool gained a New Images tab**
-(`3ae071d`). That tool is a different app in the same folder -
-`qigor_wallpaper_sync/`, its own git repository with **no remote**, ignored by
-the outer public repo - so its commits are not part of the 16 unpushed ones
-above and there is nowhere to push them to. New `new_images.py` holds the
-logic with no tkinter, 56 checks added to `tests/test_sync.py` (140 total).
-Frank asked for one thing per sentence and got all of them; what he has NOT
-been asked about is that the tab is now the tallest in the notebook at his
-saved zoom (font 13), which costs the shared console about four lines,
-because a ttk.Notebook is as tall as its tallest tab on every tab. Offer to
-shorten the list; do not just do it.
+**The wallpaper SYNC tool is a different app in the same folder** and has its
+own handoff: [[qigor-sync-open-work]]. Four commits there on 2026-09-02 (five
+tabs now, a recycle bin, and startup cut from 5.3s to 1.4s). It is its own git
+repository with no remote, ignored by this one, so none of its commits are
+part of the unpushed pile above.
 
-Two follow-ups the same evening (`fd1fec9`), both from **frank using the tab
-himself while the session ran** - his config gained `new_images_move: true`
-and two pictures from his Downloads landed in the real pack at 15:42 and
-15:44, copies with the originals left behind. That is exactly the case he
-then asked for: ticking *move* after the copy is already there now reads both
-files right through, compares md5s and offers to delete the original instead
-of offering a second copy. Watch for this: he exercises new features live, so
-the real I: pack and his real config change underneath a session.
+Two things from that work that bear on THIS app:
 
-`gdrive.py` is new in the same commit - **no drive letter is written down
-anywhere any more**, and a test greps the source to keep it that way. He has
-**three** Google Drive accounts mounted (G:, H:, I:; the packs are on I: =
-frankk@4nt.org), which is why the old `I:\...` default was wrong for any
-other machine *and* any other account. The module docstring and README carry
-the three discovery sources and why each alone is incomplete.
+- **`2f9e164` fixed its Windows paths.** The five image sources were built
+  from `Path.home() / "AppData/..."` plus one literal `C:/Windows`;
+  `app/constants.py` now resolves `APPDATA` / `LOCALAPPDATA` / `WINDIR` from
+  the environment, names the four Windows folders once each, and
+  `wallpaper.py` imports them instead of keeping a second copy of two of the
+  spellings. The installer was already doing this properly. No Google Drive
+  code exists in this app at all - that was checked, twice.
+- **The emoji still cost this app ~0.9s of startup**, and removing one does
+  not help: whichever glyph renders first pays the font load. The sync tool
+  went emoji-free and started in a quarter of the time; the numbers and the
+  cheap replacement glyphs are in [[drive-listing-costs-half-a-second]].
+  **Offer that swap here; do not just do it.**
 
-The main app was audited at the same time and has no Google Drive code at all;
-what it did have was `Path.home()/"AppData/..."` and one `C:/Windows`
-literal, now resolved from the environment (`2f9e164` in the outer repo).
-
-**The sync tool can now DELETE from archive.org, and that changes how it must
-be tested.** `ia_client.delete_files` (added 2026-09-02, `3a86759`) is the only
-call in the whole project that removes anything from archive.org, and the Move
-tab uses it: a move copies, recycles the original, then deletes the picture
-from the item it left, so the next Pull cannot put it back. **Any test that
-exercises a move must stub `qws.ia.delete_files`** - `configured_status()` is
-TRUE on this machine because the vault is unlocked, so an unstubbed move
-against a pretend item reaches out for real. The library's own `debug=True`
-prepares a delete request and sends nothing, which is how the call shape was
-verified against a real item.
-
-Nothing is deleted from disk either: `recycle.py` moves originals to
-`<drive_root>_recycle_bin`, a SIBLING of the sync root (inside it would be
-uploaded by the next Push), and only what has sat there 30 days can be
-emptied.
-
-The tabs are **Sync / Folders / New Images / Move / Upload setup** - "Items"
-was renamed because the half you keep touching is the folder. Heights at
-frank's font 13: Folders 396, Move 489, New Images 547 (the tallest), console
-414px. Moving the move pane out of the Folders tab is what bought that back;
-a ttk.Notebook is as tall as its tallest tab on every tab, and it had been
-923/two lines.
-
-**Long "?" help texts are `HelpWindow`, never `messagebox.showinfo`** - a
-messagebox draws in the system dialog font, which A+/A- cannot touch, so the
-longest texts in the app stayed at 8pt while everything else zoomed. frank
-raised this; it is the kind of thing to check for whenever a new explanation
-is added.
-
-The GUI drive scripts (104 checks for New Images, 92 for Folders and Move,
-real mainloop, every messagebox stubbed to a recorder) is in the scratchpad, not the repo - same rule as the
-main app's. It subclasses `Config` onto a temp dir so frank's own config and
-his real I:\ pack are never touched; the one check that does touch the real
-pack stubs `ni.discard` to refuse before it can delete anything.
+**frank exercises new features live while a session runs** - watch for his
+config and the real files changing underneath you.
 
 Testing this GUI: [[gui-overhaul-untested-handoff]]. Startup cost:
 [[tk-startup-cost-emoji]]. Distribution: [[installer-release-state]].
