@@ -268,9 +268,11 @@ def _build_gallery_tab(app, parent):
     imp_btn.pack(side=tk.LEFT, padx=(0, 4))
     Tooltip(imp_btn,
             "Download images from this URL and add to image store.\n\n"
-            "Select a gallery URL first. You are shown how many images\n"
-            "were found, and offered a folder to keep them in — named\n"
-            "after the gallery, and yours to change.\n"
+            "Select a gallery URL first. You get a list of what is on the\n"
+            "page with the images you already have taken out of it, ticked\n"
+            "ready to fetch, and a preview of whichever line you click.\n"
+            "The folder to keep them in is named after the gallery and\n"
+            "yours to change.\n"
             "Thumbnails are left behind; Esc cancels.")
 
     c = BTN_COLORS["danger"]

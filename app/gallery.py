@@ -12,6 +12,11 @@ Two ways in, because one page is not like another:
 
 Nothing here touches Tk: the app calls it from a worker thread and does the
 talking itself.
+
+What a gallery offers is described as a list of items rather than bare URLs,
+because choosing between them needs more than an address: the filename to
+save under, the size where the gallery admits one, its own thumbnail where it
+keeps one, and whether the store already holds that picture.
 """
 from __future__ import annotations
 
@@ -22,7 +27,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .wallpaper import IMAGE_EXTS
+from .wallpaper import IMAGE_EXTS, store_images, store_label
 
 UA         = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 TIMEOUT    = 30
@@ -71,10 +76,29 @@ def suggest_folder(url: str) -> str:
     return _safe(url_label(url), "gallery")
 
 
+def safe_folder(name: str) -> str:
+    """
+    A typed-in folder name Windows will accept; "" if nothing is left of it.
+
+    Empty is a real answer — it means the store itself — so this cannot fall
+    back to a name of its own the way suggest_folder does.
+    """
+    return _safe(name, "") if name.strip() else ""
+
+
 def file_name_for(url: str) -> str:
     """The filename to save a downloaded image under."""
     path = urllib.parse.urlparse(url).path
     return _safe(urllib.parse.unquote(Path(path).name), "image.jpg")
+
+
+def size_label(n: int) -> str:
+    """A byte count to read, or "" for the galleries that do not give one."""
+    if not n:
+        return ""
+    if n >= 1_000_000:
+        return "{:.1f} MB".format(n / 1_048_576)
+    return "{:.0f} KB".format(max(n / 1024, 1))
 
 
 # ── Finding ──────────────────────────────────────────────────────────────────
@@ -110,6 +134,42 @@ def _is_item_picture(f: dict) -> bool:
     return "thumb" not in fmt and "tile" not in fmt
 
 
+def _item(url: str, thumb: "str | None" = None, size: int = 0) -> dict:
+    """One picture a gallery offers. `have` is filled in by mark_present()."""
+    return {"url": url, "name": file_name_for(url),
+            "thumb": thumb, "size": size, "have": None}
+
+
+def _archive_thumbs(files: list) -> dict:
+    """
+    The item's own small copy of each picture, keyed by the picture's name.
+
+    The _thumb.jpg derivatives the picture filter throws away are worth
+    keeping hold of here: previewing a highlighted row from a 15 KB thumbnail
+    rather than the 2 MB wallpaper is what makes walking a long list bearable.
+    A derivative names what it came from in `original` — which is a list for
+    some of them, and those are not one picture's thumbnail.
+    """
+    thumbs = {}
+    for f in files:
+        if (f.get("source") or "").lower() != "derivative":
+            continue
+        if "thumb" not in (f.get("format") or "").lower():
+            continue
+        orig, name = f.get("original"), f.get("name")
+        if isinstance(orig, str) and name:
+            thumbs.setdefault(orig, name)
+    return thumbs
+
+
+def _archive_size(f: dict) -> int:
+    """The file's size in bytes; 0 when the metadata does not say."""
+    try:
+        return int(f.get("size") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _from_archive(item: str, log) -> list:
     raw = _fetch("https://archive.org/metadata/" + urllib.parse.quote(item))
     data = json.loads(raw.decode("utf-8", "replace"))
@@ -117,6 +177,8 @@ def _from_archive(item: str, log) -> list:
     if not files:
         log("archive.org knows no files for “{}”.".format(item), "yellow")
         return []
+    base = "https://archive.org/download/" + urllib.parse.quote(item)
+    small = _archive_thumbs(files)
     out, thumbs = [], 0
     for f in files:
         if not _is_item_picture(f):
@@ -124,8 +186,12 @@ def _from_archive(item: str, log) -> list:
                 thumbs += 1
             continue
         name = f.get("name", "")
-        out.append("https://archive.org/download/{}/{}".format(
-            urllib.parse.quote(item), urllib.parse.quote(name)))
+        thumb = small.get(name)
+        out.append(_item(
+            "{}/{}".format(base, urllib.parse.quote(name)),
+            thumb="{}/{}".format(base, urllib.parse.quote(thumb))
+            if thumb else None,
+            size=_archive_size(f)))
     log("archive.org item “{}”: {} image{}{}.".format(
         item, len(out), "" if len(out) == 1 else "s",
         ", {} thumbnail{} ignored".format(thumbs, "" if thumbs == 1 else "s")
@@ -145,22 +211,48 @@ def _from_html(url: str, log) -> list:
             continue
         ext = Path(urllib.parse.urlparse(full).path).suffix.lower()
         if ext in IMAGE_EXTS:
-            found.append(full)
+            found.append(_item(full))
     log("Read {} — {} image link{} on the page.".format(
         url, len(found), "" if len(found) == 1 else "s"), "dim")
     return found
 
 
-def find_images(url: str, log=lambda *_a: None) -> list:
+def find_items(url: str, log=lambda *_a: None) -> list:
     """Every image the gallery at `url` offers, in page order, deduplicated."""
     item = archive_item(url)
     found = _from_archive(item, log) if item else _from_html(url, log)
     seen, out = set(), []
-    for u in found:
-        if u not in seen:
-            seen.add(u)
-            out.append(u)
+    for it in found:
+        if it["url"] not in seen:
+            seen.add(it["url"])
+            out.append(it)
     return out
+
+
+def find_images(url: str, log=lambda *_a: None) -> list:
+    """Just the addresses, for a caller that has no choosing to do."""
+    return [it["url"] for it in find_items(url, log)]
+
+
+def mark_present(items: list) -> int:
+    """
+    Fill in each item's `have` — where the store already holds it. Returns how
+    many that was.
+
+    Filename, case-insensitively, and nothing cleverer: the store is largely
+    what this same importer put there, under the name the gallery gave it.
+    Comparing the bytes would mean downloading every image to find out it was
+    already here, which is the download the whole exercise is avoiding.
+    """
+    index = {}
+    for path in store_images():          # newest first, so the newest wins
+        index.setdefault(path.name.lower(), path)
+    present = 0
+    for it in items:
+        hit = index.get(it["name"].lower())
+        it["have"] = store_label(hit) if hit is not None else None
+        present += hit is not None
+    return present
 
 
 # ── Fetching ─────────────────────────────────────────────────────────────────

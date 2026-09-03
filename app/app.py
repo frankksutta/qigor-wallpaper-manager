@@ -22,6 +22,7 @@ from . import scaling
 from .config import Config
 from .tooltip import Tooltip
 from .dialogs import AboutDialog, NameDialog, _InputDialog, _RenameDialog
+from .galleryimport import ImportDialog
 from .slideshow import (slideshow_runner_is_stale,
                         slideshow_last_run_failed)
 from .desktop_preview import start_preview
@@ -476,7 +477,6 @@ class App:
         None if nothing was added.
         """
         from . import playlists as pl
-        from .dialogs import NameDialog
         if not paths:
             return None
         if name is None:
@@ -713,11 +713,12 @@ class App:
 
     def _import_gallery(self):
         """
-        Download every image on the selected gallery page into the store.
+        Download images from the selected gallery page into the store.
 
         Three steps, because the first two need the network and the one in the
-        middle needs an answer: find what is there, ask where to put it, fetch
-        it. Only the asking happens on the main thread.
+        middle needs an answer: find what is there and what of it is new, ask
+        which of those to take and where, fetch them. Only the asking happens
+        on the main thread.
         """
         if self.is_running:
             self._log("Something is already running — wait for it to finish.",
@@ -753,16 +754,24 @@ class App:
 
     def _do_find_gallery(self, loc):
         try:
-            urls = gallery.find_images(loc, self._log_threadsafe)
+            items = gallery.find_items(loc, self._log_threadsafe)
+            # Walking the store is a few thousand stat calls on a big one, so
+            # it happens here beside the fetch rather than on the main thread
+            # with the dialog waiting to be drawn.
+            have = gallery.mark_present(items)
         except Exception as exc:
             self.root.after(0, lambda e=str(exc): self._import_failed(e))
             return
-        self.root.after(0, lambda: self._ask_import_folder(loc, urls))
+        if items:
+            self._log_threadsafe(
+                "{} already in your store, {} new.".format(
+                    have, len(items) - have), "dim")
+        self.root.after(0, lambda: self._ask_import_choices(loc, items))
 
-    def _ask_import_folder(self, loc, urls):
-        """Between finding and fetching: where should these go?"""
+    def _ask_import_choices(self, loc, items):
+        """Between finding and fetching: which of these, and where?"""
         self._progress_stop()
-        if not urls:
+        if not items:
             self._import_over()
             self._log("No images found on that page.", "yellow")
             self._log("   A gallery whose images load by script may not list "
@@ -770,15 +779,26 @@ class App:
             self._set_status("Nothing to import")
             return
 
-        dialog = NameDialog(
-            self.root, "Import Gallery",
-            "Found {} image{} at\n{}\n\n"
-            "They will be saved in your image store, in a folder of this "
-            "name. Clear the box to put them straight into the store.".format(
-                len(urls), "" if len(urls) == 1 else "s", loc),
-            self.theme_name,
-            prefill=gallery.suggest_folder(loc),
-            label="Folder in the image store:", allow_empty=True)
+        if all(it["have"] for it in items):
+            # Nothing to choose between: every picture on the page is already
+            # here. Opening a picker with an empty list would say less.
+            self._import_over()
+            self._log("Nothing new — all {} image{} on that page {} already "
+                      "in your store.".format(
+                          len(items), "" if len(items) == 1 else "s",
+                          "is" if len(items) == 1 else "are"), "green")
+            self._set_status("Nothing new to import")
+            messagebox.showinfo(
+                "Nothing new",
+                "All {} image{} on that gallery {} already in your image "
+                "store.\n\nNothing was downloaded.".format(
+                    len(items), "" if len(items) == 1 else "s",
+                    "is" if len(items) == 1 else "are"),
+                parent=self.root)
+            return
+
+        dialog = ImportDialog(self.root, self.theme_name, loc, items,
+                              folder_prefill=gallery.suggest_folder(loc))
         self.root.wait_window(dialog)
         if dialog.result is None:
             self._import_over()
@@ -786,7 +806,9 @@ class App:
             self._set_status("Import cancelled")
             return
 
-        dest = STORE_DIR / dialog.result if dialog.result else STORE_DIR
+        urls, folder = dialog.result
+        dest = STORE_DIR / folder if folder else STORE_DIR
+        self._log(f"Taking {len(urls)} of {len(items)} images.", "cyan")
         self._log(f"Saving into: {dest}", "cyan")
         self._progress_set(0, len(urls))
         threading.Thread(target=self._do_import_gallery,
