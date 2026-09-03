@@ -128,10 +128,31 @@ saved zoom (font 13), which costs the shared console about four lines,
 because a ttk.Notebook is as tall as its tallest tab on every tab. Offer to
 shorten the list; do not just do it.
 
-The GUI drive script for that tab (68 checks, real mainloop, every messagebox
+Two follow-ups the same evening (`fd1fec9`), both from **frank using the tab
+himself while the session ran** - his config gained `new_images_move: true`
+and two pictures from his Downloads landed in the real pack at 15:42 and
+15:44, copies with the originals left behind. That is exactly the case he
+then asked for: ticking *move* after the copy is already there now reads both
+files right through, compares md5s and offers to delete the original instead
+of offering a second copy. Watch for this: he exercises new features live, so
+the real I: pack and his real config change underneath a session.
+
+`gdrive.py` is new in the same commit - **no drive letter is written down
+anywhere any more**, and a test greps the source to keep it that way. He has
+**three** Google Drive accounts mounted (G:, H:, I:; the packs are on I: =
+frankk@4nt.org), which is why the old `I:\...` default was wrong for any
+other machine *and* any other account. The module docstring and README carry
+the three discovery sources and why each alone is incomplete.
+
+The main app was audited at the same time and has no Google Drive code at all;
+what it did have was `Path.home()/"AppData/..."` and one `C:/Windows`
+literal, now resolved from the environment (`2f9e164` in the outer repo).
+
+The GUI drive script for that tab (100 checks, real mainloop, every messagebox
 stubbed to a recorder) is in the scratchpad, not the repo - same rule as the
 main app's. It subclasses `Config` onto a temp dir so frank's own config and
-his real I:\ pack are never touched.
+his real I:\ pack are never touched; the one check that does touch the real
+pack stubs `ni.discard` to refuse before it can delete anything.
 
 Testing this GUI: [[gui-overhaul-untested-handoff]]. Startup cost:
 [[tk-startup-cost-emoji]]. Distribution: [[installer-release-state]].
