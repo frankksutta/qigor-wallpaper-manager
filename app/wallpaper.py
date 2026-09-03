@@ -14,7 +14,8 @@ import ctypes
 from datetime import datetime
 from pathlib import Path
 
-from .constants import WALLPAPER_STYLES, STORE_DIR, HELPERS_DIR
+from .constants import (WALLPAPER_STYLES, STORE_DIR, HELPERS_DIR,
+                        LOCKSCREEN_DIR, SPOTLIGHT_DIR)
 
 
 # ── Image file extensions we recognise ───────────────────────────────────────
@@ -471,7 +472,7 @@ def find_current_lock_screen_image() -> tuple[str | None, str]:
         pass
 
     # 2. SystemData has per-user lock screen images in subdirs (Picture mode)
-    system_data = Path.home() / "AppData/Local/Microsoft/Windows/SystemData"
+    system_data = LOCKSCREEN_DIR
     if system_data.exists():
         try:
             candidates = []
@@ -485,10 +486,7 @@ def find_current_lock_screen_image() -> tuple[str | None, str]:
             pass
 
     # 3. Spotlight asset cache
-    spotlight_dir = (Path.home() /
-        "AppData/Local/Packages"
-        "/Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy"
-        "/LocalState/Assets")
+    spotlight_dir = SPOTLIGHT_DIR
     if spotlight_dir.exists():
         try:
             big = [f for f in spotlight_dir.iterdir()

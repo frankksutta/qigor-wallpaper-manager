@@ -2,6 +2,7 @@
 constants.py  —  QiGor Wallpaper Manager
 All app-wide constants: name, version, styles, paths, themes, colors.
 """
+import os
 from pathlib import Path
 
 APP_NAME    = "QiGor Wallpaper Manager"
@@ -35,6 +36,31 @@ WALLPAPER_STYLES = {
 STORE_DIR   = Path.home() / ".qigor-wallpaper" / "saved_wallpapers"
 HELPERS_DIR = Path.home() / ".qigor-wallpaper" / "helpers"
 
+
+# ── Windows' own folders ──────────────────────────────────────────────────────
+# Asked of Windows, never assembled from Path.home() and never written down.
+# %APPDATA% and %LOCALAPPDATA% are redirectable - a roaming profile, or a user
+# who moved them - and Windows is not always on C:, which is exactly the sort
+# of thing that works on the machine an app was written on and nowhere else.
+# The literals are the last-resort fallback only.
+def _env_dir(name: str, fallback) -> Path:
+    value = os.environ.get(name, "").strip()
+    return Path(value) if value else Path(fallback)
+
+
+APPDATA      = _env_dir("APPDATA",      Path.home() / "AppData/Roaming")
+LOCALAPPDATA = _env_dir("LOCALAPPDATA", Path.home() / "AppData/Local")
+WINDIR       = _env_dir("SystemRoot",   "C:/Windows")
+
+# Named once each, because wallpaper.py needs the same two folders that
+# WIN_IMAGE_SOURCES lists and had its own copy of both spellings.
+CACHED_WALLPAPER_DIR = APPDATA / "Microsoft/Windows/Themes/CachedFiles"
+SPOTLIGHT_DIR = (LOCALAPPDATA / "Packages"
+                 / "Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy"
+                 / "LocalState" / "Assets")
+BUILTIN_WALLPAPER_DIR = WINDIR / "Web" / "Wallpaper"
+LOCKSCREEN_DIR = LOCALAPPDATA / "Microsoft/Windows/SystemData"
+
 WIN_IMAGE_SOURCES = [
     {
         "label": "My Wallpaper Store",
@@ -43,27 +69,25 @@ WIN_IMAGE_SOURCES = [
     },
     {
         "label": "Windows Cached Wallpaper",
-        "path":  Path.home() / "AppData/Roaming/Microsoft/Windows/Themes/CachedFiles",
+        "path":  CACHED_WALLPAPER_DIR,
         "tip":   "Windows keeps a scaled copy of your last-set wallpaper here.\n"
                  "Useful to recover a wallpaper you forgot to save.",
     },
     {
         "label": "Windows Spotlight (daily images)",
-        "path":  Path.home() / "AppData/Local/Packages"
-                 "/Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy"
-                 "/LocalState/Assets",
+        "path":  SPOTLIGHT_DIR,
         "tip":   "Daily rotating Spotlight images.\n"
                  "Files have NO extension — rename to .jpg to use them.\n"
                  "Use the 'Copy Spotlight Images' button to extract them.",
     },
     {
         "label": "Built-in Windows Wallpapers",
-        "path":  Path("C:/Windows/Web/Wallpaper"),
+        "path":  BUILTIN_WALLPAPER_DIR,
         "tip":   "Windows built-in theme wallpapers (Windows Glow, etc.).",
     },
     {
         "label": "Lock Screen Images",
-        "path":  Path.home() / "AppData/Local/Microsoft/Windows/SystemData",
+        "path":  LOCKSCREEN_DIR,
         "tip":   "Lock screen images (may require admin to browse).",
     },
 ]
