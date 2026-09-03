@@ -145,6 +145,20 @@ def remove_task() -> bool:
 
 # ── The image pool ───────────────────────────────────────────────
 
+def is_recursive(state: dict) -> bool:
+    """
+    Whether a folder's subfolders count. They do, unless the state says not.
+
+    The default used to be False, which made the image store itself look
+    empty the moment its images were sorted into folders — and sorting them
+    into folders is exactly what Import does with every gallery it fetches. A
+    state written before this change has no `recursive` key at all, so it
+    gets the new default too; advance() reshuffles by itself when the pool
+    underneath a queue changes, so there is nothing to migrate.
+    """
+    return bool(state.get("recursive", True))
+
+
 def resolve_pool(state: dict) -> list:
     """
     Every image the slideshow may show, as absolute path strings.
@@ -158,8 +172,20 @@ def resolve_pool(state: dict) -> list:
         return playlists.existing_items(state.get("playlist") or "")
     folder = Path(state.get("folder", ""))
     return [str(folder / name)
-            for name in get_images_in_folder(folder,
-                                             state.get("recursive", False))]
+            for name in get_images_in_folder(folder, is_recursive(state))]
+
+
+def deeper_count(state: dict) -> int:
+    """
+    How many images this folder is passing over in its subfolders.
+
+    Only ever non-zero when subfolders have been switched off: it is there so
+    that "no images here" can say where the images actually are, rather than
+    leaving someone to wonder at a folder they know is full.
+    """
+    if state.get("source") == "playlist" or is_recursive(state):
+        return 0
+    return len(get_images_in_folder(Path(state.get("folder", "")), True))
 
 
 def describe_pool(state: dict) -> str:
@@ -167,7 +193,7 @@ def describe_pool(state: dict) -> str:
     if state.get("source") == "playlist":
         return "playlist “{}”".format(state.get("playlist") or "?")
     return "folder{}:\n{}".format(
-        " and its subfolders" if state.get("recursive") else "",
+        " and its subfolders" if is_recursive(state) else "",
         state.get("folder", "?"))
 
 
@@ -642,7 +668,7 @@ class SlideshowPanel(tk.Frame):
         saved_style    = state.get("style",
                                    cfg.get("wallpaper_style") or "Fill")
         saved_source   = state.get("source",   "folder")
-        saved_recurse  = state.get("recursive", False)
+        saved_recurse  = is_recursive(state)
         saved_playlist = state.get("playlist", "")
         saved_psecs    = str(cfg.get("slideshow_preview_secs") or 10)
         saved_restore  = bool(cfg.get("slideshow_preview_restore"))
@@ -1067,9 +1093,16 @@ class SlideshowPanel(tk.Frame):
                 "Folder does not exist:\n{}".format(ui["folder"]), parent=self)
             return False
         if not resolve_pool(ui):
+            deeper = deeper_count(ui)
             messagebox.showerror(
                 "No images",
-                "No image files found in {}".format(describe_pool(ui)),
+                "No image files found in {}{}".format(
+                    describe_pool(ui),
+                    "\n\nThere {} {} image{} in its subfolders. Tick "
+                    "“Include subfolders” to play {}.".format(
+                        "is" if deeper == 1 else "are", deeper,
+                        "" if deeper == 1 else "s",
+                        "it" if deeper == 1 else "them") if deeper else ""),
                 parent=self)
             return False
         return True
@@ -1107,15 +1140,24 @@ class SlideshowPanel(tk.Frame):
 
         def _work():
             n = len(resolve_pool(ui))
+            # Counted on this thread too: it walks the same tree.
+            deeper = deeper_count(ui) if n == 0 else 0
 
             def _apply():
                 # The folder box may have moved on while this was counting.
                 if gen != self._count_gen:
                     return
-                self._count_var.set(
-                    "⚠  No images found in {}.".format(where) if n == 0
-                    else "✔  {} image{} in {}.".format(
-                        n, "s" if n != 1 else "", where))
+                if n:
+                    text = "✔  {} image{} in {}.".format(
+                        n, "s" if n != 1 else "", where)
+                elif deeper:
+                    text = ("⚠  Nothing directly in this folder — but {} "
+                            "image{} in its subfolders. Tick “Include "
+                            "subfolders”.".format(
+                                deeper, "" if deeper == 1 else "s"))
+                else:
+                    text = "⚠  No images found in {}.".format(where)
+                self._count_var.set(text)
             try:
                 self.after(0, _apply)
             except (tk.TclError, RuntimeError):
