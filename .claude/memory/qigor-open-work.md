@@ -1,18 +1,20 @@
 ---
 name: qigor-open-work
-description: "Where the wallpaper MANAGER stands after 2026-09-02: 17 commits unpushed, 0.8.3 bumped but never built, and the improvements frank was told about but has not decided on."
-metadata:
+description: "Where the wallpaper MANAGER stands after 2026-09-03: 18 commits unpushed, 0.8.3 bumped but never built, the new Import picker, and the improvements frank was told about but has not decided on."
+metadata: 
   node_type: memory
   type: project
-  modified: 2026-09-02T06:30:00.000Z
+  modified: 2026-09-03T10:50:29.061Z
+  originSessionId: 219c014b-fa04-4f9c-81a9-334df20d7a05
 ---
 
 State at the end of 2026-09-02, when frank shut the machine down mid-stream.
 He said there were "more improvements to work on" — so expect to be picking
 this up, not starting fresh.
 
-**Sixteen commits are on local `master` and unpushed** (`f19cd2c` …
-`172ec3d`). Frank asks to commit as he goes and has never asked to push; the
+**Seven commits are on local `master` and unpushed** (`45488b6` …
+`0a2dc8e`) as of 2026-09-03 - frank pushed everything up to `cdf36ad`
+himself. Frank asks to commit as he goes and has never asked to push; the
 repo is public — offer, don't push unasked. The tree is clean.
 
 **0.8.3 is bumped in `app/constants.py` but has never been built or
@@ -109,12 +111,23 @@ the repo; frank has not asked for a test suite.
   empty toolbar space for ~10px of height; full size costs ~54px and forces
   the Wallpaper tab's left column to show its scrollbar.
 
-**All three scrollbars render light grey on the dark theme** and cannot be
-fixed the obvious way: Windows draws `tk.Scrollbar` itself and ignores its
-colour options, and `ttk.Scrollbar` under the `clam` theme came out beige
-(#dcdad5) rather than the configured colours. Measured at the widgets' real
-coordinates — an earlier reading that said ttk worked was a mis-aimed pixel
-sample. Left alone rather than guessed at.
+**All three scrollbars render light grey on the dark theme.** The earlier
+conclusion here — that `ttk.Scrollbar` under `clam` came out beige (#dcdad5)
+and could not be coloured — **was wrong**, and the sync tool disproved it on
+2026-09-03. That beige is simply clam's unset default. It takes a colour when
+asked by the right style name: `Vertical.TScrollbar` / `Horizontal.TScrollbar`,
+configuring `background` (the thumb), `troughcolor`, `bordercolor`,
+`arrowcolor`, `lightcolor` and `darkcolor` — `TScrollbar` alone does not
+reach the orientation-specific style. Verified by pixel: thumb, trough and
+arrows all came back exactly as set.
+
+`tk.Scrollbar` really is undyeable — Windows draws it — so the fix is to move
+the three to `ttk.Scrollbar` along with `ttk.Style().theme_use("clam")`. That
+switch drags every other ttk widget onto clam and each then needs a colour
+stated in both themes; the sync tool's `_init_ttk_theme` and `apply_theme` are
+the worked example, and its README carries the reasoning. It also fixes the
+same white-void-under-the-rows Treeview bug this app will have. Offered, not
+done — it is a whole-app look change.
 
 **The wallpaper SYNC tool is a different app in the same folder** and has its
 own handoff: [[qigor-sync-open-work]]. Four commits there on 2026-09-02 (five
@@ -139,6 +152,27 @@ Two things from that work that bear on THIS app:
 
 **frank exercises new features live while a session runs** - watch for his
 config and the real files changing underneath you.
+
+**2026-09-03: the Import picker** (`c4aba8b`, one commit, still 0.8.3 and
+still unbuilt — the release pile is now 18 commits). Frank's ask, in his
+words: Import "just downloads everything, including things you already have".
+It now checks the store first and opens `app/galleryimport.py` — a filtered,
+ticked list with All / None / Invert and a preview of the highlighted row.
+`gallery.py` returns items (url, name, size, thumb, have) rather than URLs;
+`find_images()` is kept as a wrapper. Two things worth not rediscovering: an
+archive.org derivative names its source in `original` (a **list** for some,
+which are not one picture's thumbnail), which is what makes the preview 8 KB
+instead of 2 MB; and the app's `_apply_theme_recursive` never reaches a
+Toplevel built after it has run, so a dialog must colour every widget itself
+or its LabelFrames are light-grey blocks on the dark theme.
+
+**One cosmetic thing to ask frank, unresolved:** the `⬇` (U+2B07) on the new
+Import button renders as a **box in PrintWindow captures** of the dialog,
+while every isolated render of the same font object, widget class, Toplevel
+and post-creation `config(text=…)` draws the arrow correctly. The gallery
+tab's existing Import button uses the same codepoint, so if it is a box on
+screen both need swapping — `↓` captured cleanly everywhere. It was left as
+it is rather than changed on a capture artifact.
 
 Testing this GUI: [[gui-overhaul-untested-handoff]]. Startup cost:
 [[tk-startup-cost-emoji]]. Distribution: [[installer-release-state]].

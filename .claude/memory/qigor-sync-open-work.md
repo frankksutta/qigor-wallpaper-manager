@@ -28,6 +28,7 @@ nowhere to push them. Five commits exist; four are from 2026-09-02:
 | `3a86759` | **Move** is a tab, moves are complete, `recycle.py` |
 | `4a53b79` | startup 5.3s → 1.4s |
 | `3e3b985` | the GUI drivers and profilers moved into `tests/` |
+| `3f2b4be` | **2026-09-03**: the tab strip, and the ttk theme swap it needed |
 
 Tabs: **Sync / Folders / New Images / Move / Upload setup**. Pure-data modules
 with no tkinter: `sync_core`, `ia_client`, `svault_client`, `new_images`,
@@ -65,6 +66,41 @@ They were in the session scratchpad until `3e3b985` and are now in the repo,
 paths relative. A modal dialog can only be driven by `after` timers scheduled
 **before** it opens — its `wait_window` nested loop is unreachable from
 outside. More Tk-driving lessons: [[gui-overhaul-untested-handoff]].
+
+## 2026-09-03: the tab strip
+
+Frank's ask: "the tabs need better visual separation, they just read like one
+long runon sentence right now. active tab color too subtle, inactive tabs
+color too subtle." Done in `3f2b4be`.
+
+**The app is on ttk's `clam` theme now, and had to be.** On Windows ttk starts
+on `vista`, where a Notebook tab is drawn by the OS from a bitmap:
+`-background` is accepted and then ignored. Probed by setting a tab to bright
+orange and reading the pixel back - `#f9f9f9` under vista, `#000000` under
+alt/default/xpnative, `#f38020` under clam. `_init_ttk_theme` switches once
+before any widget exists, because `theme_use` resets every style setting.
+
+Two clam facts worth not rediscovering: its `Notebook.tab` element has no
+`-borderwidth` (only background/bordercolor/lightcolor/darkcolor), so there is
+**no gap to be had between tabs** - separation is strip-vs-chip contrast, a
+per-tab border and padding, all three; and it draws the **selected tab two
+pixels shorter** than its neighbours, undone by mapping `padding` for the
+selected state. Raise the *horizontal* padding too and every tab to the right
+jumps sideways on each switch.
+
+The switch fixed an unreported bug: vista ignored Treeview
+`-fieldbackground`, so on the dark theme the empty part of every list was a
+white void under the rows. Scrollbars went dark at the same time.
+
+`tests/drive_tabs.py` (36 checks) asserts none of this from the source - it
+photographs the strip and counts runs of colour. It is the first test here
+that reads the screen, and three things it had to learn are in its docstring:
+do NOT make the window DPI-aware (production is not; measure the
+logical-to-physical ratio instead), scan 11px below the notebook top rather
+than through the labels (a scan through the middle returns 275 runs of glyph
+antialiasing), and never drive a screen-reading test from a CHAIN of `after()`
+callbacks - blocking to let Windows draw means `update()` re-enters the next
+one. It needs the dialog recorders or it hangs on the Move tab.
 
 ## Open, and frank's call
 

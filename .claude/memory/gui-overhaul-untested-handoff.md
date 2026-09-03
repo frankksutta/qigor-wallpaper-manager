@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 2a67fce0-3b0b-4a79-9e50-02c6aa86dfbf
-  modified: 2026-09-02T04:05:00.000Z
+  modified: 2026-09-03T10:50:53.831Z
 ---
 
 Four commits on 2026-09-01 built the overhaul (`27b463f` zoom, `540f6f2`
@@ -97,5 +97,19 @@ Driving the GUI from a script, the things that cost the most time:
   `CreateCompatibleBitmap` must take the **window** DC — a fresh memory DC
   holds a 1×1 monochrome bitmap, so passing it gives 1 bpp and an all-black
   capture — and the bitmap must be selected back *out* before `GetDIBits`.
+- **A PrintWindow capture is not proof of what the screen shows.** `⬇`
+  (U+2B07) came out as a tofu box on a button in the capture and drew as an
+  arrow in every isolated render of the same font object, widget class,
+  Toplevel and post-creation `config(text=…)`. Other symbols in the same
+  window (`☑ ☐ ⇄ • ×`) captured fine. Don't change a glyph on a capture alone
+  — ask frank what he sees. (2026-09-03, the Import picker.)
+- **Never judge colours by looking at a capture**; sample the pixels. Reading
+  the rendered PNG called a correctly light-themed dialog "dark" twice, and
+  called a `#2d2d2d` listbox white. `Image.getpixel` and a mean-brightness
+  figure settled both in seconds.
+- **ImageGrab still lands in the wrong place with DPI awareness set alone** —
+  a grab of `winfo_rootx/y` + `winfo_width/height` returned desktop wallpaper,
+  not the button. The offset in the bullet above is needed even DPI-aware;
+  PrintWindow is the cheaper path.
 
 Distribution state in [[installer-release-state]], what is still open in [[qigor-open-work]], why startup is slow in [[tk-startup-cost-emoji]].
