@@ -79,7 +79,7 @@ RELEASE_ASSETS = (SETUP_ZIP, SHA_TXT, MANIFEST_JSON, WEB_SETUP_CMD)
 OBSOLETE_ASSETS = ("QiGor_Wallpaper_Manager.exe",
                    "QiGor_Wallpaper_Manager_Portable.zip")
 EMBED_CACHE    = Path.home() / ".qigor-wallpaper" / "embed_cache"
-SETUP_DEPS     = ["pillow", "tkinterdnd2"]
+SETUP_DEPS     = ["pillow", "tkinterdnd2", "winotify"]  # winotify: the Reminder toast
 # Copied into the zip verbatim. installer/ is what makes the zip installable;
 # without it the folder still runs, it just cannot install itself.
 SETUP_SRC_DIRS = ("app", "installer", "assets")
