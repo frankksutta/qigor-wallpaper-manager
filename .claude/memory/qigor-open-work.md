@@ -1,6 +1,6 @@
 ---
 name: qigor-open-work
-description: "Where the wallpaper MANAGER stands after 2026-09-03: 12 commits unpushed, 0.8.4 bumped but never built, the new Import picker, and the improvements frank was told about but has not decided on."
+description: "Where the wallpaper MANAGER stands as of 2026-11-04: all pushed, 0.8.4 live, 0.8.5 (reminder toast fix) bumped but not yet built/uploaded, and the improvements frank was told about but has not decided on."
 metadata: 
   node_type: memory
   type: project
@@ -12,19 +12,16 @@ State at the end of 2026-09-02, when frank shut the machine down mid-stream.
 He said there were "more improvements to work on" — so expect to be picking
 this up, not starting fresh.
 
-**Twelve commits are on local `master` and unpushed** (`9d210b8` …
-`578ab05`) as of 2026-09-03 - frank pushed everything up to `cdf36ad`
-himself, and the Import picker's two commits followed. Frank asks to commit as he goes and has never asked to push; the
-repo is public — offer, don't push unasked. The tree is clean.
+**Everything is pushed to `origin/master` as of 2026-11-04** (`7229d7d`; frank
+asked). The repo is public — offer to push, don't push unasked.
 
-**0.8.4 is bumped in `app/constants.py` (frank asked, `578ab05`) and has
-never been built or uploaded, nor was 0.8.3 before it.** `version.json` in the
-repo still describes the 0.8.3 zip that was never released; `build.pyw` reads
-`APP_BUILD` and rewrites that manifest itself, so leave it alone until a
-build runs. Every UI change from this session is source-only: the installed
-copy is still the released 0.8.2 and will not see any of it. A release needs
-📦 Build Installer then 🐙 Upload Release, all four assets — details in
-[[installer-release-state]].
+**0.8.4 is the live release** (built 2026-09-03; an earlier note here wrongly
+said it was never uploaded — check `gh release download latest -p version.json`
+rather than trusting memory). **0.8.5 is bumped but not yet built/uploaded**: it
+bundles `winotify`, missing from the embeddable runtime since 0.8.1, which made
+the reminder and Test Toast fail silently. Release notes now live in
+`CHANGELOG.md`. A release needs 📦 Build Installer then 🐙 Upload Release, all
+four assets — details in [[installer-release-state]].
 
 What changed this session, so the shape is clear before reading the diffs:
 the Wallpaper tab was split by purpose (preview + controls left, selector +
@@ -136,7 +133,7 @@ done — it is a whole-app look change.
 own handoff: [[qigor-sync-open-work]]. Four commits there on 2026-09-02 (five
 tabs now, a recycle bin, and startup cut from 5.3s to 1.4s). It is its own git
 repository with no remote, ignored by this one, so none of its commits are
-part of the unpushed pile above.
+part of this repo's pushes.
 
 Two things from that work that bear on THIS app:
 

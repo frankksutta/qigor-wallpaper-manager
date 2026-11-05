@@ -4,7 +4,7 @@
      %USERPROFILE%\.claude-teamN\projects\<slug>\memory . OneDrive syncs them between
      machines. NEVER delete/recurse the junction path -- that destroys the real store.
      Set up 2026-08-14; full recipe is in the debabel store: shared-memory-across-accounts.md -->
-- [Open work: the manager](qigor-open-work.md) — 12 unpushed commits, 0.8.4 never built, the Import picker, recursive slideshow folders, and a dead playlist to raise.
+- [Open work: the manager](qigor-open-work.md) — all pushed; 0.8.4 live, 0.8.5 (reminder fix) needs build + upload; recursive slideshow folders, and a dead playlist to raise.
 - [Open work: the sync tool](qigor-sync-open-work.md) — handoff for 2026-09-04: the restyled tabs, the recycle bin, and the three hazards before touching it.
 - [Heredocs mangle backslashes](bash-heredoc-mangles-backslashes.md) — patch scripts go in a Write-ed file; a heredoc silently corrupts `\n` and the patch quietly does nothing.
 - [Scheduler's one-minute floor](task-scheduler-minute-floor.md) — schtasks rejects PT5S/PT30S, which is why slideshow preview is a Tk timer.
