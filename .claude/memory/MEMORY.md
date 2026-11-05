@@ -11,7 +11,7 @@
 - [Drive latency + the emoji font load](drive-listing-costs-half-a-second.md) — the two reasons an app is slow to start: ~0.5s per Drive folder listing, ~0.9s for the first emoji in the process.
 - [Startup cost is emoji](tk-startup-cost-emoji.md) — 716ms for the first emoji glyph in Tk; never query schtasks on the main thread.
 - [GUI overhaul verified](gui-overhaul-untested-handoff.md) — every tab driven button-by-button at 0.8.3; how to script a modal Tk GUI without deadlocking.
-- [Installer release state](installer-release-state.md) — v0.8.2 published; version.json must ship with every release or updates never fire.
+- [Installer release state](installer-release-state.md) — v0.8.4 published, 0.8.5 next; version.json must ship with every release or updates never fire.
 - [Portable over signing](portable-distribution-decision.md) — why QiGor ships embeddable Python + plain source instead of a signed exe, an obfuscated build, or a C++ stub.
 - [Smart App Control constraint](smart-app-control-constraint.md) — SAC enforces on this machine and blocks unsigned builds unpredictably, per file hash.
 - [License still undecided](repo-public-license-pending.md) — public repo, no LICENSE or README; frank picks the license, don't choose for him.
