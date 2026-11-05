@@ -156,8 +156,9 @@ without `version.json` no installed copy ever learns that a new build exists.
 The version comes from `APP_BUILD` in `app/constants.py` — the single source of
 truth. Bump it before building.
 
-Release notes come from `RELEASE_NOTES.md` if present, otherwise from the last
-few commit subjects.
+Release notes come from the `## <APP_BUILD>` section of `CHANGELOG.md`, which
+keeps every release. Write that section before building; without one the build
+warns and falls back to the last few commit subjects.
 
 ---
 

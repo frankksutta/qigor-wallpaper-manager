@@ -1128,13 +1128,22 @@ class App:
         """
         Notes shown in the app's update dialog.
 
-        RELEASE_NOTES.md wins when present; otherwise fall back to the subject
-        lines of the commits since the last build, which is better than nothing
-        and costs nothing to maintain.
+        The CHANGELOG.md section headed `## <APP_BUILD>` — the changelog keeps
+        every release, and this is the slice for the one being built. With no
+        such section, warn (the version was likely not bumped, or the notes not
+        written) and fall back to recent commit subjects.
         """
-        notes_file = SCRIPT_DIR / "RELEASE_NOTES.md"
-        if notes_file.exists():
-            return notes_file.read_text(encoding="utf-8").strip()
+        build = read_app_versions()[1]
+        log_file = SCRIPT_DIR / "CHANGELOG.md"
+        if log_file.exists():
+            text = log_file.read_text(encoding="utf-8")
+            m = re.search(r"^## +{}\b[^\n]*\n(.*?)(?=^## |\Z)".format(
+                re.escape(build)), text, re.M | re.S)
+            if m and m.group(1).strip():
+                return m.group(1).strip()
+        self._log("⚠   CHANGELOG.md has no section for {} — did you bump "
+                  "APP_BUILD and write the notes? Using commit subjects "
+                  "instead.".format(build), "warning")
         out, rc = self._git_out("log", "-8", "--pretty=• %s")
         return out.strip() if rc == 0 else ""
 

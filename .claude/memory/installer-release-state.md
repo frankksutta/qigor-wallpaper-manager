@@ -23,9 +23,9 @@ all four in order, prunes the obsolete `.exe`/portable-zip assets, and rewrites
 the release description from the manifest — so the published version, checksum
 and install instructions are generated, never hand-edited. Don't edit the
 release body on github.com; change `release_body()` in `build.pyw` or
-`RELEASE_NOTES.md` and re-upload, or the next upload silently reverts it.
+`CHANGELOG.md` and re-upload, or the next upload silently reverts it.
 
-**Source is 0.8.3 as of 2026-09-02 and has never been built or uploaded** — everything since the 0.8.2 release is source-only, so an installed copy shows none of it. Nine commits also sit unpushed; see [[qigor-open-work]].
+**0.8.4 is published (built 2026-09-03). Source is 0.8.5 as of 2026-11-04** — bundles winotify, which the runtime lacked since 0.8.1 so reminder toasts failed silently. The build never bumps the version: bump `APP_BUILD` and add a `## <build>` section to CHANGELOG.md first. See [[qigor-open-work]].
 
 **Published 2026-09-01: build 0.8.2**, verified by downloading the live
 `QiGor-Setup.cmd` and running it end to end. The old PyInstaller `.exe` asset is
