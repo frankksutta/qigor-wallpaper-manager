@@ -576,6 +576,11 @@ class GitHubUploader:
         if status == 200:
             self.log("✅  Repo exists: {}/{}".format(self.user, self.repo), "success")
             return True
+        if status == 401:
+            # Not a missing repo — trying to create one only hides the cause.
+            self.log("❌  GitHub rejected the token (expired or revoked). "
+                     "Make a new one at github.com/settings/tokens.", "error")
+            return False
         self.log("Creating repo {}/{}...".format(self.user, self.repo), "info")
         res, status = self._req("POST", "/user/repos", {
             "name": self.repo,
@@ -1431,11 +1436,40 @@ class App:
 
     # ── GitHub release upload ─────────────────────────────────────────────────
 
+    @staticmethod
+    def _gh_cli_token() -> str:
+        """The GitHub CLI's own login token, or "" if gh is absent or logged out.
+
+        Never saved to build_config.json — gh keeps it in the OS keyring and
+        refreshes it itself, which a pasted PAT cannot do."""
+        if not shutil.which("gh"):
+            return ""
+        try:
+            r = subprocess.run(["gh", "auth", "token"], capture_output=True,
+                               text=True, timeout=15,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            return r.stdout.strip() if r.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _token_accepted(token: str) -> bool:
+        req = urllib.request.Request("https://api.github.com/user",
+                                     headers={"Authorization": "token " + token})
+        try:
+            with urllib.request.urlopen(req, timeout=15):
+                return True
+        except urllib.error.HTTPError as e:
+            return e.code != 401
+        except Exception:
+            return True    # offline etc. — let the upload report it
+
     def _start_github(self):
         token = self._token_var.get().strip()
-        if not token:
+        if not token and not shutil.which("gh"):
             messagebox.showerror("No Token",
-                "Enter your GitHub Personal Access Token.\n\n"
+                "Enter your GitHub Personal Access Token, or log in with the "
+                "GitHub CLI (gh auth login).\n\n"
                 "Create one at: github.com/settings/tokens\n"
                 "Required scope: repo")
             return
@@ -1455,6 +1489,17 @@ class App:
 
         def gh_log(msg, tag="info"):
             self.root.after(0, lambda m=msg, t=tag: self._log(m, t))
+
+        # Fine-grained PATs expire; the gh CLI's login doesn't. Fall back to it
+        # rather than failing a release over a stale pasted token.
+        if not token or not self._token_accepted(token):
+            gh_tok = self._gh_cli_token()
+            if gh_tok:
+                gh_log("⚠   Saved token {} — using the GitHub CLI login "
+                       "instead.".format("is empty" if not token else
+                                         "was rejected (expired or revoked)"),
+                       "warning")
+                token = gh_tok
 
         up = GitHubUploader(token, GITHUB_USER, GITHUB_REPO, gh_log)
 
